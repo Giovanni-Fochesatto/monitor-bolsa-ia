@@ -2,9 +2,12 @@ streamlit
 yfinance
 matplotlib
 pandas
-googlesearch-python
-beautifulsoup4
 requests
-lxml
 feedparser
 streamlit-autorefresh
+newspaper3k
+lxml_html_clean
+
+lxml
+googlesearch-python
+beautifulsoup4
