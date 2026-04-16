@@ -25,7 +25,7 @@ st.caption(f"Última atualização: {time.strftime('%H:%M:%S')} (Fuso: Blumenau/
 
 # --- BARRA LATERAL: FILTROS DE ESTRATÉGIA ---
 st.sidebar.header("🎯 Filtros de Estratégia")
-st.sidebar.write("Defina os limites máximos ou mínimos para exibir as ações:")
+st.sidebar.write("Defina os limites para exibir as ações:")
 
 f_pl = st.sidebar.slider("P/L Máximo", 0.0, 50.0, 15.0, step=0.5)
 f_pvp = st.sidebar.slider("P/VP Máximo", 0.0, 10.0, 2.5, step=0.1)
@@ -52,9 +52,10 @@ def calcular_rsi(data, window=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-# --- ANÁLISE FUNDAMENTALISTA COM LEGENDA AMPLIADA ---
+# --- ANÁLISE FUNDAMENTALISTA ---
 def analise_fundamentalista_i10(ticker, info):
-    st.subheader(f"📊 Indicadores Fundamentalistas (Estilo Investidor 10)")
+    # Removido "(Estilo Investidor 10)"
+    st.subheader(f"📊 Indicadores Fundamentalistas")
     try:
         pl = info.get('trailingPE', 0)
         pvp = info.get('priceToBook', 0)
@@ -75,7 +76,8 @@ def analise_fundamentalista_i10(ticker, info):
         c6.metric("EV/EBITDA", f"{ev_ebitda:.2f}" if ev_ebitda else "---")
         c7.metric("Dív.Líq/EBITDA", f"{div_ebitda:.2f}" if div_ebitda != 0 else "---")
 
-        with st.expander("🎓 O que significam esses números? (Legenda)"):
+        # Removido "(Legenda)"
+        with st.expander("🎓 O que significam esses números?"):
             st.markdown("""
             * **P/L:** Preço sobre Lucro. Indica em quantos anos você recuperaria o investimento através dos lucros.
             * **P/VP:** Preço sobre Valor Patrimonial. Indica se a ação está barata em relação ao patrimônio físico.
@@ -89,7 +91,7 @@ def analise_fundamentalista_i10(ticker, info):
     except Exception:
         st.warning("Erro ao carregar indicadores.")
 
-# --- FUNÇÃO DE IA E SENTIMENTO COM LINKS ---
+# --- FUNÇÃO DE IA E SENTIMENTO ---
 def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
     st.subheader(f"🕵️‍♂️ Inteligência de Mercado: {ticker}")
     noticias_detalhes = []
@@ -135,7 +137,8 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
         st.write(f"🧠 Sentimento IA: {otimismo} Sinais Positivos | {pessimismo} Sinais de Risco")
         st.write(f"📈 RSI Atual: {rsi_atual:.2f}")
 
-    with st.expander("📌 Ver Manchetes Analisadas (Links Oficiais)"):
+    # Removido "(Links Oficiais)"
+    with st.expander("📌 Ver Manchetes Analisadas"):
         for n in noticias_detalhes:
             st.markdown(f"• {n['titulo']} [[Link]({n['link']})]")
 
@@ -150,14 +153,13 @@ def buscar_dados(ticker):
     except Exception:
         return None, None
 
-# --- LOOP PRINCIPAL COM LÓGICA DE FILTRO ---
+# --- LOOP PRINCIPAL ---
 tickers = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBAS3.SA', 'SANB11.SA', 'ABEV3.SA']
 encontrou_alguma = False
 
 for ticker in tickers:
     dados, info = buscar_dados(ticker)
     if dados is not None:
-        # Extração de valores para o filtro
         pl = info.get('trailingPE', 0) or 0
         pvp = info.get('priceToBook', 0) or 0
         dy = (info.get('dividendYield', 0) or 0) * 100
@@ -165,10 +167,9 @@ for ticker in tickers:
         margem = (info.get('profitMargins', 0) or 0) * 100
         ev_ebitda = info.get('enterpriseToEbitda', 0) or 0
         divida_liquida = info.get('totalDebt', 0) - info.get('totalCash', 0)
-        ebitda_valor = info.get('ebitda', 1) # evita divisão por zero
+        ebitda_valor = info.get('ebitda', 1)
         div_ebitda = divida_liquida / ebitda_valor
 
-        # LÓGICA DO FILTRO: Verifica se a ação atende a TODOS os critérios da barra lateral
         if (pl <= f_pl and pvp <= f_pvp and dy >= f_dy and roe >= f_roe and 
             margem >= f_margem and ev_ebitda <= f_ev_ebitda and div_ebitda <= f_div_ebitda):
             
@@ -179,13 +180,4 @@ for ticker in tickers:
             preco_atual = float(dados['Close'].iloc[-1])
             media_val = dados['MA200'].iloc[-1]
             media_atual = float(media_val) if not np.isnan(media_val) else preco_atual
-            rsi_atual = float(dados['RSI'].iloc[-1]) if not np.isnan(dados['RSI'].iloc[-1]) else 50
-            
-            st.line_chart(dados[['Close', 'MA200']])
-            analise_fundamentalista_i10(ticker, info)
-            analise_minuciosa_ia(ticker, preco_atual, media_atual, rsi_atual)
-
-if not encontrou_alguma:
-    st.info("💡 Nenhuma ação da lista atende aos filtros selecionados no momento. Tente flexibilizar os critérios na barra lateral.")
-
-st.caption("Engenharia de IA 2026 - Sistema de Triagem Fundamentalista Pro.")
+            rsi_atual = float(dados['RSI'].iloc[-1]) if not np.isnan(dados['RSI'].iloc[-1]) else
