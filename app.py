@@ -87,14 +87,12 @@ def obter_dados_ticker(ticker, mercado):
 # --- BARRA LATERAL (SIDEBAR) ---
 st.sidebar.title("🌎 Mercado e Estratégia")
 
-# Índices Mundiais
 st.sidebar.subheader("📈 Índices Mundiais")
 indices_data = obter_indices()
 for nome, (valor, var) in indices_data.items():
     st.sidebar.metric(nome, f"{valor:,.0f} pts", f"{var:.2f}%")
 st.sidebar.divider()
 
-# Câmbio
 st.sidebar.subheader("💱 Câmbio em Tempo Real")
 cambio = obter_cambio()
 col_c1, col_c2 = st.sidebar.columns(2)
@@ -116,17 +114,12 @@ if st.sidebar.button("Resetar Filtros"):
     st.session_state.filtros_ativos = False
     st.rerun()
 
-# --- TICKERS EXPANDIDOS ---
+# --- TICKERS ---
 if mercado_selecionado == "Brasil":
-    # Lista ampliada com as principais da B3
-    lista_base = [
-        'PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'ABEV3', 'EGIE3', 'WEGE3', 
-        'TRPL4', 'SANB11', 'SAPR11', 'CPLE6', 'B3SA3', 'RENT3', 'VBBR3', 'RADL3',
-        'RAIZ4', 'GOAU4', 'CMIG4', 'JBSS3', 'SUZB3', 'TAEE11', 'KLBN11'
-    ]
+    lista_base = ['PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'ABEV3', 'EGIE3', 'WEGE3', 'TRPL4', 'SANB11', 'SAPR11', 'TAEE11']
     moeda_simbolo = "R$"
 else:
-    lista_base = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'NFLX', 'KO', 'DIS']
+    lista_base = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'NFLX']
     moeda_simbolo = "US$"
 
 # --- CABEÇALHO ---
@@ -171,44 +164,54 @@ for tkr in tickers_para_processar:
         score_n = sum(noticias_texto.count(w) for w in ["queda", "prejuízo", "venda", "caiu", "risk", "loss", "sell"])
         rsi_val = calcular_rsi(hist['Close'])
 
+        # Lógica de Veredito com Motivo Dinâmico
+        motivo = ""
         if score_p > score_n and rsi_val < 70:
             veredito, cor = "COMPRA ✅", "success"
         elif score_n > score_p or rsi_val > 75:
             veredito, cor = "CAUTELA ⚠️", "error"
+            motivos_lista = []
+            if rsi_val > 75: motivos_lista.append(f"RSI elevado ({rsi_val:.1f}): Ativo sobrecomprado.")
+            if score_n > score_p: motivos_lista.append("Sentimento de notícias negativo.")
+            motivo = " | ".join(motivos_lista)
         else:
             veredito, cor = "NEUTRO ⚖️", "warning"
 
         dados_vencedoras.append({
             "Ticker": tkr, "Empresa": info.get('shortName', tkr), "Preço": p_atual,
             "P/L": pl, "DY %": dy, "Dívida": div_e, "Graham": p_justo, "Upside %": upside,
-            "Veredito": veredito, "Cor": cor, "RSI": rsi_val, "Hist": hist, "Links": lista_links
+            "Veredito": veredito, "Cor": cor, "Motivo": motivo, "RSI": rsi_val, "Hist": hist, "Links": lista_links
         })
 
 # --- INTERFACE ---
 if dados_vencedoras:
     st.subheader("🏆 Ranking de Oportunidades")
-    df_resumo = pd.DataFrame(dados_vencedoras)[["Ticker", "Preço", "DY %", "Graham", "Upside %", "Veredito"]]
-    st.dataframe(df_resumo.sort_values(by="Upside %", ascending=False), use_container_width=True, hide_index=True)
-
-    with st.expander("📖 Legendas e Interpretação"):
-        col_l1, col_l2 = st.columns(2)
-        with col_l1:
-            st.markdown("**💰 Preço e Valor**")
-            st.write("- **Upside %:** Potencial de alta até o Preço Justo.")
-            st.write("- **Graham:** Valor intrínseco baseado em ativos e lucros.")
-        with col_l2:
-            st.markdown("**📊 Técnica e IA**")
-            st.write("- **RSI:** Abaixo de 30 é barato, acima de 70 é caro.")
-            st.write("- **Veredito:** Análise automatizada de notícias e técnica.")
+    df_resumo = pd.DataFrame(dados_vencedoras)[["Ticker", "Preço", "DY %", "Upside %", "Veredito", "Motivo"]]
+    
+    # Configuração da coluna de ajuda no DataFrame
+    st.dataframe(
+        df_resumo.sort_values(by="Upside %", ascending=False), 
+        use_container_width=True, 
+        hide_index=True,
+        column_config={
+            "Veredito": st.column_config.TextColumn("Veredito", help="O motivo da cautela aparece na coluna ao lado."),
+            "Motivo": st.column_config.TextColumn("Por que Cautela?", width="medium")
+        }
+    )
 
     for acao in dados_vencedoras:
         st.divider()
         col_tit, col_ver = st.columns([3, 1])
         col_tit.header(f"🏢 {acao['Empresa']} ({acao['Ticker']})")
         
-        if acao["Cor"] == "success": col_ver.success(f"**{acao['Veredito']}**")
-        elif acao["Cor"] == "error": col_ver.error(f"**{acao['Veredito']}**")
-        else: col_ver.warning(f"**{acao['Veredito']}**")
+        # O parâmetro 'help' cria o balão de ajuda ao passar o mouse
+        if acao["Cor"] == "success": 
+            col_ver.success(f"**{acao['Veredito']}**")
+        elif acao["Cor"] == "error": 
+            col_ver.error(f"**{acao['Veredito']}**", icon="⚠️")
+            if acao["Motivo"]: st.info(f"📌 **Motivo:** {acao['Motivo']}")
+        else: 
+            col_ver.warning(f"**{acao['Veredito']}**")
 
         st.line_chart(acao['Hist']['Close'])
 
@@ -217,14 +220,12 @@ if dados_vencedoras:
         c2.metric("P/L", round(acao['P/L'], 2))
         c3.metric("DY", f"{acao['DY %']:.2f}%")
         c4.metric("Dív.Líq/EBITDA", round(acao['Dívida'], 2))
-        c5.metric("Preço Justo (Graham)", f"{moeda_simbolo} {acao['Graham']:.2f}", f"{acao['Upside %']:.1f}%")
+        # Adicionado help na métrica de Graham
+        c5.metric("Graham", f"{moeda_simbolo} {acao['Graham']:.2f}", f"{acao['Upside %']:.1f}%", help=acao["Motivo"] if acao["Motivo"] else "Valor intrínseco")
 
-        # Seção de Notícias Clicáveis
         with st.expander(f"📊 Detalhes Técnicos e 📌 Notícias: {acao['Ticker']}"):
             st.write(f"📈 RSI (Força Relativa): {acao['RSI']:.2f}")
             st.markdown("---")
-            st.markdown("**Últimas Manchetes:**")
-            for n in acao['Links']:
-                st.markdown(f"• [{n['titulo']}]({n['link']})")
+            for n in acao['Links']: st.markdown(f"• [{n['titulo']}]({n['link']})")
 else:
     st.info("💡 Use os filtros ou faça uma busca direta.")
