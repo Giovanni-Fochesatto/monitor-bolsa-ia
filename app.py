@@ -39,48 +39,60 @@ def calcular_rsi(data, window=14):
     return rsi.iloc[-1]
 
 @st.cache_data(ttl=600)
-def obter_dados_ticker(ticker):
+def obter_dados_ticker(ticker, mercado):
     try:
-        if not ticker.endswith(".SA"): ticker += ".SA"
+        # Adiciona .SA apenas se for Brasil e não tiver o sufixo
+        if mercado == "Brasil" and not ticker.endswith(".SA"):
+            ticker += ".SA"
         t = yf.Ticker(ticker)
         hist = t.history(period="1y")
         return t.info, hist
     except:
         return None, None
 
-# --- BARRA LATERAL: FILTROS E BUSCA ---
-st.sidebar.title("🎯 Estratégia e Busca")
-busca_direta = st.sidebar.text_input("🔍 Buscar Ação Única:", placeholder="Ex: PETR4").upper()
+# --- BARRA LATERAL: MERCADO E FILTROS ---
+st.sidebar.title("🌎 Mercado e Estratégia")
+
+# SELEÇÃO DE MERCADO (A aba que você pediu)
+mercado_selecionado = st.sidebar.radio(
+    "Escolha o Mercado:",
+    ["Brasil", "EUA"],
+    on_change=ativar_filtros
+)
+
+busca_direta = st.sidebar.text_input(f"🔍 Buscar Ação ({mercado_selecionado}):", placeholder="Ex: PETR4 ou AAPL").upper()
 
 st.sidebar.divider()
 
-with st.sidebar.expander("📊 Filtros B3 (Geral)", expanded=True):
+with st.sidebar.expander("📊 Filtros de Valuation", expanded=True):
     f_pl = st.slider("P/L Máximo", 0.0, 50.0, 50.0, step=0.5, on_change=ativar_filtros)
     f_pvp = st.slider("P/VP Máximo", 0.0, 10.0, 10.0, step=0.1, on_change=ativar_filtros)
     f_dy = st.slider("DY Mínimo (%)", 0.0, 20.0, 0.0, step=0.5, on_change=ativar_filtros)
-    f_div_ebitda = st.slider("Dív.Líq/EBITDA Máximo", 0.0, 10.0, 10.0, step=0.5, on_change=ativar_filtros)
+    f_div_ebitda = st.slider("Dív.Líq/EBITDA Máximo", 0.0, 15.0, 15.0, step=0.5, on_change=ativar_filtros)
 
-if st.sidebar.button("Resetar Monitor Geral"):
+if st.sidebar.button("Resetar Monitor"):
     st.session_state.filtros_ativos = False
     st.rerun()
 
+# --- DEFINIÇÃO DE TICKERS POR MERCADO ---
+if mercado_selecionado == "Brasil":
+    lista_base = ['PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'ABEV3', 'SANB11', 'EGIE3', 'WEGE3', 'TRPL4']
+    moeda = "R$"
+else:
+    # Top ações dos EUA (Nasdaq/NYSE)
+    lista_base = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'V', 'JPM', 'KO']
+    moeda = "US$"
+
 # --- CABEÇALHO ---
-st.title("🤖 Monitor IA")
+st.title(f"🤖 Monitor IA - Mercado {mercado_selecionado}")
 st.caption(f"Atualização: {time.strftime('%H:%M:%S')} | Local: Blumenau/SC")
 
-# --- LISTA AMPLIADA DA BOLSA BRASILEIRA ---
-tickers_b3 = [
-    'PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'ABEV3', 'SANB11', 'EGIE3', 
-    'WEGE3', 'TRPL4', 'SAPR11', 'ITSA4', 'B3SA3', 'ELET3', 'GGBR4', 'JBSS3', 
-    'RENT3', 'SUZB3', 'RAIL3', 'VIVT3', 'CPLE6', 'BBSE3', 'PSSA3', 'HYPE3'
-]
-
-tickers_para_processar = [busca_direta] if busca_direta else tickers_b3
+# --- LÓGICA DE PROCESSAMENTO ---
+tickers_para_processar = [busca_direta] if busca_direta else lista_base
 dados_vencedoras = []
 
-# --- PROCESSAMENTO INICIAL PARA O RANKING ---
 for tkr in tickers_para_processar:
-    info, hist = obter_dados_ticker(tkr)
+    info, hist = obter_dados_ticker(tkr, mercado_selecionado)
     if info and not hist.empty:
         pl = info.get('trailingPE', 0) or 0
         pvp = info.get('priceToBook', 0) or 0
@@ -113,34 +125,33 @@ for tkr in tickers_para_processar:
                 "hist": hist
             })
 
-# --- EXIBIÇÃO: TABELA DE RANKING NO TOPO ---
+# --- EXIBIÇÃO ---
 if dados_vencedoras:
-    st.subheader("🏆 Ranking de Oportunidades")
+    # 1. Ranking no Topo
+    st.subheader(f"🏆 Melhores Oportunidades ({mercado_selecionado})")
     df_ranking = pd.DataFrame(dados_vencedoras).drop(columns=['info', 'hist'])
     st.dataframe(df_ranking.sort_values(by="Upside %", ascending=False), use_container_width=True, hide_index=True)
 
-    # --- EXIBIÇÃO: DETALHAMENTO INDIVIDUAL ---
+    # 2. Detalhamento Estilo Clássico
     for acao in dados_vencedoras:
         st.divider()
         st.header(f"🏢 {acao['Empresa']} ({acao['Ticker']})")
         st.line_chart(acao['hist']['Close'])
 
-        # Cards de Indicadores
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Preço Atual", f"R$ {acao['Preço']:.2f}")
+        c1.metric("Preço Atual", f"{moeda} {acao['Preço']:.2f}")
         c2.metric("P/L", acao['P/L'])
         c3.metric("DY", f"{acao['DY %']:.2f}%")
         c4.metric("Dív.Líq/EBITDA", acao['Dív.Líq/EBITDA'])
-        c5.metric("Preço Justo (Graham)", f"R$ {acao['Graham']:.2f}", f"{acao['Upside %']:.1f}%")
+        c5.metric("Preço Justo", f"{moeda} {acao['Graham']:.2f}", f"{acao['Upside %']:.1f}%")
 
-        # Inteligência de Mercado
-        with st.expander("📌 Notícias e Sentimento IA"):
-            rsi_final = calcular_rsi(acao['hist']['Close'])
-            st.write(f"📈 RSI Atual: {rsi_final:.2f}")
-            
-            url = f"https://news.google.com/rss/search?q={acao['Ticker']}+when:2d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+        with st.expander(f"📌 Ver Inteligência de Mercado ({acao['Ticker']})"):
+            st.write(f"📈 RSI: {calcular_rsi(acao['hist']['Close']):.2f}")
+            # Busca notícias de acordo com o idioma do mercado
+            lang = "pt-BR" if mercado_selecionado == "Brasil" else "en-US"
+            url = f"https://news.google.com/rss/search?q={acao['Ticker']}&hl={lang}"
             feed = feedparser.parse(url)
             for entry in feed.entries[:3]:
-                st.markdown(f"• {entry.title.split(' - ')[0]} [[Link]({entry.link})]")
+                st.markdown(f"• {entry.title} [[Link]({entry.link})]")
 else:
-    st.info("💡 Nenhuma ação atende aos filtros atuais.")
+    st.info("Nenhuma ação atende aos critérios atuais.")
