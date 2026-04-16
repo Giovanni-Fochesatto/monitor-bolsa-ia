@@ -6,30 +6,33 @@ import requests
 from bs4 import BeautifulSoup
 import time
 import feedparser
+from streamlit_autorefresh import st_autorefresh
 
 # 1. Configuração da Página
 st.set_page_config(page_title="IA Investidor Pro", layout="centered")
 
-st.title("🤖 Monitor IA: Análise Técnica + Fundamentalista")
-st.caption("Dados em tempo real: B3, Google News e Indicadores de Valor")
+# AUTO-REFRESH: Atualiza o app sozinho a cada 5 minutos (300 segundos)
+st_autorefresh(interval=300 * 1000, key="data_refresh")
 
-# --- FUNÇÃO DE ANÁLISE MINUCIOSA (COM O SEU CÓDIGO INTEGRADO) ---
+st.title("🤖 Monitor IA: Automação B3")
+st.caption(f"Última atualização: {time.strftime('%H:%M:%S')} (Atualiza sozinho a cada 5 min)")
+
+# --- FUNÇÃO DE ANÁLISE MINUCIOSA (VERSÃO PERSISTENTE) ---
 def analise_minuciosa_ia(ticker, preco, media):
     st.subheader(f"🕵️‍♂️ Análise Profunda IA: {ticker}")
     
-    url_news = f"https://news.google.com/rss/search?q={ticker}+stock+analysis+quando:2d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+    url_news = f"https://news.google.com/rss/search?q={ticker}+quando:2d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
     resumo_noticias = ""
     
     try:
         feed = feedparser.parse(url_news)
         with st.spinner(f'IA vasculhando portais financeiros para {ticker}...'):
-            # SEU CÓDIGO INTEGRADO AQUI:
             for entry in feed.entries[:3]: 
                 try:
-                    # Plano A: Resumo do Google
-                    resumo_noticias += entry.summary + " "
+                    # PLANO A: Título e resumo do Google (Garante que nunca fique vazio)
+                    resumo_noticias += f"{entry.title}. {entry.summary} "
                     
-                    # Plano B: Detalhes do site
+                    # PLANO B: Tentativa de leitura profunda
                     headers = {'User-Agent': 'Mozilla/5.0'}
                     response = requests.get(entry.link, timeout=5, headers=headers)
                     if response.status_code == 200:
@@ -44,33 +47,33 @@ def analise_minuciosa_ia(ticker, preco, media):
 
     st.write("---")
     
-    # Motor de Decisão (Aprimorado)
-    palavras_positivas = ["alta", "dividendo", "lucro", "compra", "crescimento", "ebitda", "subiu"]
-    palavras_negativas = ["queda", "risco", "prejuízo", "venda", "caiu", "dívida", "crise"]
+    # Motor de Decisão
+    palavras_positivas = ["alta", "dividendo", "lucro", "compra", "crescimento", "ebitda", "subiu", "valorização"]
+    palavras_negativas = ["queda", "risco", "prejuízo", "venda", "caiu", "dívida", "crise", "desvalorização"]
 
     otimismo = sum(resumo_noticias.lower().count(p) for p in palavras_positivas)
     pessimismo = sum(resumo_noticias.lower().count(p) for p in palavras_negativas)
 
     if preco > media and otimismo > pessimismo:
         st.success("**VEREDITO: COMPRA ✅**")
-        st.write("Cenário de alta técnica confirmado por otimismo nas notícias.")
+        st.write("Tendência de alta técnica e notícias otimistas.")
     elif preco < media and pessimismo > otimismo:
         st.error("**VEREDITO: EVITAR ❌**")
-        st.write("Tendência de baixa com suporte de notícias negativas.")
+        st.write("Tendência de baixa técnica e notícias pessimistas.")
     else:
         st.warning("**VEREDITO: NEUTRO / OBSERVAR ⚖️**")
-        st.write("Falta de consenso entre gráfico e notícias.")
+        st.write("Falta de consenso claro entre gráfico e notícias.")
 
-    with st.expander("🔍 Detalhes da Varredura"):
-        st.write(resumo_noticias if resumo_noticias else "Nenhum texto adicional encontrado.")
+    with st.expander("🔍 Detalhes da Varredura (Fontes Analisadas)"):
+        # Limpando tags HTML que às vezes vêm no resumo do RSS
+        texto_limpo = BeautifulSoup(resumo_noticias, "lxml").text if resumo_noticias else ""
+        st.write(texto_limpo[:1500] + "...")
 
-# --- FUNÇÃO DE BUSCA DE DADOS E FUNDAMENTOS ---
+# --- BUSCA DE DADOS ---
 def buscar_dados_completos(ticker):
     t = yf.Ticker(ticker)
-    df = t.history(period="1y") # 1 ano de dados
+    df = t.history(period="1y")
     df['MA200'] = df['Close'].rolling(window=200).mean()
-    
-    # Pegando indicadores reais de mercado
     info = t.info
     fundamentos = {
         "dy": info.get('dividendYield', 0) * 100,
@@ -90,20 +93,17 @@ for ticker in tickers:
         
         st.header(f"🏢 {fund['nome']}")
         
-        # Exibindo Indicadores Reais (Dashboard)
         c1, c2, c3 = st.columns(3)
         c1.metric("Preço", f"R${preco_atual:.2f}")
         c2.metric("Div. Yield", f"{fund['dy']:.2f}%")
         c3.metric("P/L", f"{fund['pl']:.2f}")
 
-        # Gráfico
         st.line_chart(dados[['Close', 'MA200']])
         
-        # Análise de IA
         analise_minuciosa_ia(ticker, preco_atual, media_atual)
         st.divider()
         
     except Exception as e:
-        st.error(f"Erro em {ticker}: {e}")
+        st.error(f"Erro em {ticker}")
 
-st.caption("Desenvolvido para estudos de Engenharia de IA - Blumenau, SC.")
+st.caption("Auto-refresh ativo. Desenvolvido para Engenharia de IA.")
