@@ -62,15 +62,16 @@ def analise_fundamentalista_i10(ticker, info):
 
         with st.expander("🎓 O que significam esses números? (Legenda)"):
             st.markdown("""
-            * **P/L:** Preço sobre Lucro. Indica em quantos anos você recuperaria o investimento.
-            * **P/VP:** Preço sobre Valor Patrimonial. Abaixo de 1,00 indica que a ação custa menos que o patrimônio da empresa.
-            * **DY (Dividend Yield):** Rendimento em dividendos nos últimos 12 meses.
-            * **ROE:** Retorno sobre Patrimônio. Mede a eficiência em gerar lucro.
+            * **P/L:** Preço sobre Lucro. Tempo estimado para recuperar o investimento via lucros.
+            * **P/VP:** Preço sobre Valor Patrimonial. Abaixo de 1,00 indica que a ação está barata em relação ao patrimônio.
+            * **DY (Dividend Yield):** Rendimento em dividendos pagos nos últimos 12 meses.
+            * **ROE:** Retorno sobre Patrimônio. Mede a eficiência da gestão em gerar lucro.
+            * **Margem Líquida:** O lucro real que sobra de cada R$ 100 vendidos.
             """)
-    except Exception as e:
-        st.warning(f"Indicadores indisponíveis no momento.")
+    except Exception:
+        st.warning("Indicadores fundamentalistas temporariamente indisponíveis.")
 
-# --- FUNÇÃO DE IA E SENTIMENTO ---
+# --- FUNÇÃO DE IA E SENTIMENTO (VERSÃO TURBINADA) ---
 def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
     st.subheader(f"🕵️‍♂️ Inteligência de Mercado: {ticker}")
     manchetes_encontradas = []
@@ -80,45 +81,56 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
     user_config.browser_user_agent = get_random_header()
     
     try:
+        # Busca RSS no Google News
         url_news = f"https://news.google.com/rss/search?q={ticker}+when:2d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
         feed = feedparser.parse(url_news)
         
         if feed.entries:
-            for entry in feed.entries[:5]: 
+            for entry in feed.entries[:6]: 
                 titulo = entry.title.split(' - ')[0]
                 manchetes_encontradas.append(titulo)
-                texto_total_analise += f"{titulo}. "
+                
+                # Tenta ler o conteúdo (Plano A) ou usa o título (Plano B)
                 try:
-                    time.sleep(random.uniform(1, 2))
+                    time.sleep(random.uniform(0.5, 1.2))
                     article = Article(entry.link, config=user_config)
                     article.download()
                     article.parse()
-                    texto_total_analise += article.text[:300] + " "
+                    texto_total_analise += f"{titulo}. {article.text[:300]} "
                 except:
-                    continue
-    except Exception as e:
-        st.error(f"Erro ao buscar notícias.")
+                    texto_total_analise += f"{titulo}. "
+        else:
+            st.info("Nenhuma notícia recente encontrada para análise de sentimento.")
+    except Exception:
+        st.error("Erro ao acessar o servidor de notícias.")
 
     # Motor de Sentimento
-    positivas = ["alta", "dividendo", "lucro", "compra", "subiu", "positivo"]
-    negativas = ["queda", "risco", "prejuízo", "venda", "caiu", "dívida"]
+    positivas = ["alta", "dividendo", "lucro", "compra", "crescimento", "subiu", "positivo", "recorde", "recompra", "otimismo"]
+    negativas = ["queda", "risco", "prejuízo", "venda", "caiu", "dívida", "crise", "negativo", "corte", "baixa"]
     
     texto_limpo = texto_total_analise.lower()
     otimismo = sum(texto_limpo.count(p) for p in positivas)
-    pessimismo = sum(texto_limpo.count(p) for p in negativas)
+    pessimismo = sum(texto_limpo.count(n) for n in negativas)
 
+    # Painel de Resultados
     col_v, col_i = st.columns([1, 2])
     with col_v:
         if preco > media and otimismo > pessimismo:
             st.success("**VEREDITO: COMPRA ✅**")
         elif preco < media and pessimismo > otimismo:
-            st.error("**VEREDITO: EVITAR/VENDA ❌**")
+            st.error("**VEREDITO: EVITAR ❌**")
         else:
-            st.warning("**VEREDITO: NEUTRO / OBSERVAR ⚖️**")
+            st.warning("**VEREDITO: NEUTRO ⚖️**")
 
     with col_i:
-        st.write(f"Técnica: {'Acima' if preco > media else 'Abaixo'} da média 200.")
-        st.write(f"RSI: {rsi_atual:.2f}")
+        status_rsi = "Caro" if rsi_atual > 70 else "Barato" if rsi_atual < 30 else "Neutro"
+        st.write(f"📊 **Técnica:** {'Acima' if preco > media else 'Abaixo'} da MA200")
+        st.write(f"📈 **RSI:** {rsi_atual:.2f} ({status_rsi})")
+        st.write(f"🧠 **Sentimento:** {otimismo} Positivos | {pessimismo} Negativos")
+
+    with st.expander("📌 Ver Manchetes Analisadas"):
+        for m in manchetes_encontradas:
+            st.write(f"• {m}")
 
 # --- BUSCA DE DADOS ---
 def buscar_dados(ticker):
@@ -131,7 +143,7 @@ def buscar_dados(ticker):
         df['MA200'] = df['Close'].rolling(window=200).mean()
         df['RSI'] = calcular_rsi(df['Close'])
         return df, t.info
-    except Exception as e:
+    except Exception:
         return None, None
 
 # --- LOOP PRINCIPAL ---
@@ -143,14 +155,15 @@ for ticker in tickers:
         st.divider()
         st.header(f"🏢 {info.get('longName', ticker)}")
         
-        # Garante que as variáveis existam antes de usar (Evita erro da linha 145)
+        # Variáveis de Preço e Média
         preco_atual = float(dados['Close'].iloc[-1])
         media_val = dados['MA200'].iloc[-1]
         media_atual = float(media_val) if not np.isnan(media_val) else preco_atual
         rsi_atual = float(dados['RSI'].iloc[-1]) if not np.isnan(dados['RSI'].iloc[-1]) else 50
         
+        # Interface do Usuário
         st.line_chart(dados[['Close', 'MA200']])
         analise_fundamentalista_i10(ticker, info)
         analise_minuciosa_ia(ticker, preco_atual, media_atual, rsi_atual)
 
-st.caption("Engenharia de IA 2026 - Blumenau, SC.")
+st.caption("Engenharia de IA 2026 - Proteção de IP e Analisador de Sentimento Ativos.")
