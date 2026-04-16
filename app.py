@@ -13,7 +13,7 @@ try:
 except LookupError:
     nltk.download('punkt')
 
-st.set_page_config(page_title="Monitor IA Pro", layout="wide")
+st.set_page_config(page_title="Monitor IA Pro - Brasil", layout="wide")
 st_autorefresh(interval=300 * 1000, key="data_refresh")
 
 if 'filtros_ativos' not in st.session_state:
@@ -39,25 +39,17 @@ def calcular_rsi(data, window=14):
 
 # --- ESTRATÉGIA VALUE INVESTING ---
 def calcular_score_value(info):
-    """Avalia a empresa com base em métricas de valor (Value Investing)"""
     score = 0
-    # 1. P/L abaixo da média histórica aceitável (ex: 15)
     if 0 < info.get('trailingPE', 99) < 15: score += 1
-    # 2. P/VP abaixo de 1.5 (Graham)
     if 0 < info.get('priceToBook', 99) < 1.5: score += 1
-    # 3. Dividend Yield robusto (> 5%)
     if (info.get('dividendYield', 0) or 0) * 100 > 5: score += 1
-    # 4. Margem Operacional positiva
     if (info.get('operatingMargins', 0) or 0) > 0.1: score += 1
     return score
 
-# [MELHORADO] Simulação de Assertividade 5 Anos com Filtros de Tendência
 def simular_performance_historica(hist):
-    """Analisa RSI + Média Móvel 200 (Tendência) + MACD nos últimos 5 anos"""
     if len(hist) < 250: return 0, 0, 0, 0, 0
     
     precos = hist['Close']
-    # Critérios Extras: Média 200 para tendência de longo prazo e MACD
     sma200 = precos.rolling(window=200).mean()
     exp12 = precos.ewm(span=12, adjust=False).mean()
     exp26 = precos.ewm(span=26, adjust=False).mean()
@@ -68,7 +60,6 @@ def simular_performance_historica(hist):
     acertos_v, total_v = 0, 0
     retornos = []
     
-    # Varredura de 5 anos (ou máximo disponível)
     for i in range(200, len(precos) - 15):
         window_rsi = precos.iloc[i-14:i]
         rsi_p = calcular_rsi(window_rsi)
@@ -78,13 +69,11 @@ def simular_performance_historica(hist):
         
         retorno = (p_saida / p_entrada) - 1
         
-        # Filtro de Compra Profissional: RSI < 35 E Preço > Média 200 (Pullback na tendência de alta)
         if rsi_p < 35 and p_entrada > m200 and macd.iloc[i] > sinal_macd.iloc[i]:
             total_c += 1
             retornos.append(retorno)
             if retorno > 0: acertos_c += 1
                 
-        # Filtro de Venda Profissional: RSI > 70 E Preço < Média 200 (Exaustão na tendência de baixa)
         elif rsi_p > 70 and (p_entrada < m200 or macd.iloc[i] < sinal_macd.iloc[i]):
             total_v += 1
             if retorno < 0: acertos_v += 1 
@@ -132,12 +121,12 @@ def obter_cambio():
     return resultados
 
 @st.cache_data(ttl=600)
-def obter_dados_ticker(ticker, mercado):
+def obter_dados_ticker(ticker):
     try:
-        if mercado == "Brasil" and not ticker.endswith(".SA"):
+        # Força o sufixo .SA para mercado brasileiro
+        if not ticker.endswith(".SA"):
             ticker += ".SA"
         t = yf.Ticker(ticker)
-        # Alterado para 5 anos conforme solicitado
         hist = t.history(period="5y")
         return t.info, hist
     except:
@@ -160,9 +149,9 @@ col_c2.metric("Euro", f"R$ {cambio['Euro'][0]:.2f}", f"{cambio['Euro'][1]:.2f}%"
 st.sidebar.metric("Bitcoin", f"R$ {cambio['Bitcoin'][0]:.0f}", f"{cambio['Bitcoin'][1]:.2f}%")
 st.sidebar.divider()
 
-mercado_selecionado = st.sidebar.radio("Escolha o Mercado:", ["Brasil", "EUA"], on_change=ativar_filtros)
+# Removida a seleção de mercado EUA/Brasil
 estrategia_ativa = st.sidebar.selectbox("Foco da Análise:", ["Análise Técnica + Notícias", "Value Investing (Graham/Buffett)"])
-busca_direta = st.sidebar.text_input(f"🔍 Busca Rápida ({mercado_selecionado}):").upper()
+busca_direta = st.sidebar.text_input("🔍 Busca Rápida (Ticker B3):").upper()
 
 with st.sidebar.expander("📊 Filtros de Valuation", expanded=True):
     f_pl = st.slider("P/L Máximo", 0.0, 50.0, 50.0, step=0.5, on_change=ativar_filtros)
@@ -174,26 +163,18 @@ if st.sidebar.button("Resetar Filtros"):
     st.session_state.filtros_ativos = False
     st.rerun()
 
-if mercado_selecionado == "Brasil":
-    lista_base = [
-        'PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'SANB11', 'B3SA3',
-        'EGIE3', 'TRPL4', 'TAEE11', 'SAPR11', 'CPLE6', 'ELET3', 'CMIG4', 'SBSP3',
-        'ABEV3', 'WEGE3', 'RADL3', 'RENT3', 'MGLU3', 'LREN3', 'RAIZ4', 'VBBR3',
-        'SUZB3', 'KLBN11', 'GOAU4', 'CSNA3', 'PRIO3', 'JBSS3', 'BRFS3', 'GGBR4',
-        'HAPV3', 'RDOR3'
-    ]
-    moeda_simbolo = "R$"
-else:
-    lista_base = [
-        'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA',
-        'NFLX', 'DIS', 'KO', 'PEP', 'MCD', 'NKE', 'WMT',
-        'JPM', 'V', 'MA', 'BAC', 'PYPL',
-        'PFE', 'JNJ', 'PG', 'COST', 'ORCL'
-    ]
-    moeda_simbolo = "US$"
+# Lista base fixada para o Brasil
+lista_base = [
+    'PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'SANB11', 'B3SA3',
+    'EGIE3', 'TRPL4', 'TAEE11', 'SAPR11', 'CPLE6', 'ELET3', 'CMIG4', 'SBSP3',
+    'ABEV3', 'WEGE3', 'RADL3', 'RENT3', 'MGLU3', 'LREN3', 'RAIZ4', 'VBBR3',
+    'SUZB3', 'KLBN11', 'GOAU4', 'CSNA3', 'PRIO3', 'JBSS3', 'BRFS3', 'GGBR4',
+    'HAPV3', 'RDOR3'
+]
+moeda_simbolo = "R$"
 
 # --- CABEÇALHO ---
-st.title(f"🤖 Monitor IA - {mercado_selecionado}")
+st.title("🤖 Monitor IA - Mercado Brasil")
 st.caption(f"Atualização: {time.strftime('%H:%M:%S')} | Local: Blumenau/SC")
 
 # --- PROCESSAMENTO ---
@@ -201,7 +182,7 @@ tickers_para_processar = [busca_direta] if busca_direta else lista_base
 dados_vencedoras = []
 
 for tkr in tickers_para_processar:
-    info, hist = obter_dados_ticker(tkr, mercado_selecionado)
+    info, hist = obter_dados_ticker(tkr)
     if info and not hist.empty:
         pl = info.get('trailingPE', 0) or 0
         pvp = info.get('priceToBook', 0) or 0
@@ -221,7 +202,7 @@ for tkr in tickers_para_processar:
         noticias_texto = ""
         lista_links = []
         try:
-            url = f"https://news.google.com/rss/search?q={tkr}&hl={'pt-BR' if mercado_selecionado == 'Brasil' else 'en-US'}"
+            url = f"https://news.google.com/rss/search?q={tkr}&hl=pt-BR"
             feed = feedparser.parse(url)
             for entry in feed.entries[:5]:
                 titulo = entry.title.lower()
@@ -229,16 +210,14 @@ for tkr in tickers_para_processar:
                 lista_links.append({"titulo": entry.title, "link": entry.link})
         except: pass
 
-        score_p = sum(noticias_texto.count(w) for w in ["alta", "lucro", "compra", "subiu", "dividend", "profit", "buy"])
-        score_n = sum(noticias_texto.count(w) for w in ["queda", "prejuízo", "venda", "caiu", "risk", "loss", "sell"])
+        score_p = sum(noticias_texto.count(w) for w in ["alta", "lucro", "compra", "subiu", "dividendo", "resultado"])
+        score_n = sum(noticias_texto.count(w) for w in ["queda", "prejuízo", "venda", "caiu", "risco"])
         rsi_val = calcular_rsi(hist['Close'])
         score_value = calcular_score_value(info)
 
-        # Cálculo de Assertividades (Agora baseado em 5 anos e filtros extras) + Novas variáveis de contagem
         taxa_compra, taxa_venda, retorno_medio, total_c, total_v = simular_performance_historica(hist)
 
         motivo_detalhe = ""
-        # LOGICA DE VEREDITO ADAPTADA À ESTRATÉGIA SELECIONADA
         if estrategia_ativa == "Value Investing (Graham/Buffett)":
             if upside > 20 and score_value >= 3:
                 veredito, cor = "VALOR ✅", "success"
@@ -279,16 +258,14 @@ for tkr in tickers_para_processar:
 
 # --- INTERFACE ---
 if dados_vencedoras:
-    st.subheader(f"🏆 Ranking de Oportunidades - Estratégia: {estrategia_ativa}")
+    st.subheader(f"🏆 Ranking de Oportunidades - {estrategia_ativa}")
     
-    # Adicionando Legendas
     with st.expander("📌 Legenda de Sinais e Vereditos"):
         st.markdown("""
-        * **VALOR ✅**: (Estratégia Value) Ativo com grande desconto frente ao preço de Graham e bons fundamentos.
-        * **COMPRA ✅**: (Estratégia Técnica) RSI baixo/médio com notícias favoráveis.
+        * **VALOR ✅**: Ativo com grande desconto frente ao preço de Graham e bons fundamentos.
+        * **COMPRA ✅**: RSI baixo/médio com notícias favoráveis.
         * **VENDA / CARO 🚨**: RSI extremo ou preço muito acima do valor justo.
         * **CAUTELA ⚠️**: Divergência entre preço e sentimento ou RSI entrando em zona de risco.
-        * **Graham**: Valor intrínseco baseado em ativos e lucros. O Upside mostra o potencial de valorização.
         """)
 
     df_resumo = pd.DataFrame(dados_vencedoras)[["Ticker", "Preço", "DY %", "Upside %", "Veredito", "Motivo", "TaxaCompra", "TaxaVenda"]]
@@ -298,8 +275,6 @@ if dados_vencedoras:
         use_container_width=True, 
         hide_index=True,
         column_config={
-            "Veredito": st.column_config.TextColumn("Veredito"),
-            "Motivo": st.column_config.TextColumn("Motivo da IA", width="medium"),
             "TaxaCompra": st.column_config.NumberColumn("Assert. Compra (5y)", format="%.1f%%"),
             "TaxaVenda": st.column_config.NumberColumn("Assert. Venda (5y)", format="%.1f%%")
         }
@@ -313,34 +288,21 @@ if dados_vencedoras:
         col_acc_c.metric("Assertividade Compra", f"{acao['TaxaCompra']:.1f}%", f"{acao['QtdCompra']} sinais")
         col_acc_v.metric("Assertividade Venda", f"{acao['TaxaVenda']:.1f}%", f"{acao['QtdVenda']} sinais")
         
-        if acao["Cor"] == "success": 
-            col_ver.success(f"**{acao['Veredito']}**")
-        elif acao["Cor"] == "error": 
-            col_ver.error(f"**{acao['Veredito']}**")
-            if acao["Motivo"]: st.info(f"👉 **Atenção:** {acao['Motivo']}")
-        else: 
-            col_ver.warning(f"**{acao['Veredito']}**")
+        if acao["Cor"] == "success": col_ver.success(f"**{acao['Veredito']}**")
+        elif acao["Cor"] == "error": col_ver.error(f"**{acao['Veredito']}**")
+        else: col_ver.warning(f"**{acao['Veredito']}**")
 
         st.line_chart(acao['Hist']['Close'])
 
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Preço Atual", f"{moeda_simbolo} {acao['Preço']:.2f}")
+        c1.metric("Preço Atual", f"R$ {acao['Preço']:.2f}")
         c2.metric("P/L", round(acao['P/L'], 2))
         c3.metric("DY", f"{acao['DY %']:.2f}%")
         c4.metric("Dív.Líq/EBITDA", round(acao['Dívida'], 2))
-        
-        c5.metric("Graham", f"{moeda_simbolo} {acao['Graham']:.2f}", f"{acao['Upside %']:.1f}%")
+        c5.metric("Graham", f"R$ {acao['Graham']:.2f}", f"{acao['Upside %']:.1f}%")
 
-        with st.expander(f"📊 Detalhes Fundamentalistas e Técnicos: {acao['Ticker']}"):
-            col_inf1, col_inf2 = st.columns(2)
-            with col_inf1:
-                st.write(f"**Fundamentos (Value Score):** {acao['ValueScore']}/4")
-                st.progress(acao['ValueScore'] / 4)
-                st.write(f"📈 RSI: {acao['RSI']:.2f}")
-            with col_inf2:
-                st.write(f"📝 **Motivo IA:** {acao['Motivo']}")
-            st.markdown("---")
-            st.markdown("**Últimas Manchetes:**")
+        with st.expander(f"📊 Detalhes: {acao['Ticker']}"):
+            st.write(f"📈 RSI: {acao['RSI']:.2f} | **Score IA:** {acao['Motivo']}")
             for n in acao['Links']: st.markdown(f"• [{n['titulo']}]({n['link']})")
 else:
-    st.info("💡 Use os filtros ou faça uma busca direta.")
+    st.info("💡 Use os filtros ou faça uma busca direta (ex: VALE3, PETR4).")
