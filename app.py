@@ -14,7 +14,7 @@ try:
 except LookupError:
     nltk.download('punkt')
 
-st.set_page_config(page_title="IA Investidor Pro", layout="wide") # Layout wide para melhor visualização
+st.set_page_config(page_title="IA Investidor Pro", layout="wide")
 
 # Auto-refresh a cada 5 minutos
 st_autorefresh(interval=300 * 1000, key="data_refresh")
@@ -22,7 +22,7 @@ st_autorefresh(interval=300 * 1000, key="data_refresh")
 st.title("🤖 Monitor IA: Automação B3 Pro")
 st.caption(f"Última atualização: {time.strftime('%H:%M:%S')} (Blumenau, SC)")
 
-# --- FUNÇÕES TÉCNICAS ADICIONAIS ---
+# --- FUNÇÕES TÉCNICAS ---
 def calcular_rsi(data, window=14):
     delta = data.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
@@ -30,11 +30,12 @@ def calcular_rsi(data, window=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-# --- FUNÇÃO DE ANÁLISE DE NOTÍCIAS E SENTIMENTO ---
+# --- FUNÇÃO DE ANÁLISE DE NOTÍCIAS E SENTIMENTO (VERSÃO FORÇA BRUTA) ---
 def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
     st.subheader(f"🕵️‍♂️ Inteligência de Mercado: {ticker}")
     
-    url_news = f"https://news.google.com/rss/search?q={ticker}+quando:2d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+    # URL otimizada para maior estabilidade
+    url_news = f"https://news.google.com/rss/search?q={ticker}+quando:2d&hl=pt-BR&gl=BR&ceid=BR:pt"
     manchetes_encontradas = []
     texto_total_analise = ""
     
@@ -56,7 +57,7 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
                 except:
                     continue
     except:
-        st.warning("Fluxo de notícias offline.")
+        st.warning("📡 Radar de notícias offline ou bloqueado temporariamente.")
 
     # Motor de Decisão
     positivas = ["alta", "dividendo", "lucro", "compra", "crescimento", "ebitda", "subiu", "positivo", "recorde", "manter", "valorização", "superou", "recompra"]
@@ -80,27 +81,48 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
         elif preco < media and pessimismo > otimismo:
             st.error("**VEREDITO: EVITAR/VENDA ❌**")
         else:
-            st.warning("**VEREDITO: NEUTRO ⚖️**")
+            st.warning("**VEREDITO: NEUTRO / OBSERVAR ⚖️**")
 
     with col_info:
         st.write(f"**Análise Técnica:** Preço {'acima' if preco > media else 'abaixo'} da média de 200 dias.")
         st.write(f"**Indicador RSI:** {rsi_atual:.2f} ({status_rsi})")
 
-    # --- RELATÓRIO DE INTELIGÊNCIA ---
-    with st.expander("🔍 Relatório de Inteligência Detalhado"):
+    # --- RELATÓRIO DE INTELIGÊNCIA COM FORÇA BRUTA (EXIBIÇÃO) ---
+    with st.expander("🔍 Relatório de Inteligência Detalhado", expanded=True):
         c1, c2 = st.columns(2)
-        c1.markdown("### 🟢 Sinais Positivos")
-        c1.write(", ".join(detectadas_pos) if detectadas_pos else "Nenhum sinal claro")
+        with c1:
+            st.markdown("### 🟢 Sinais Positivos")
+            if detectadas_pos:
+                st.write(", ".join(detectadas_pos))
+            else:
+                st.write("Nenhum termo otimista identificado.")
         
-        c2.markdown("### 🔴 Sinais de Risco")
-        c2.write(", ".join(detectadas_neg) if detectadas_neg else "Nenhum risco detectado")
+        with c2:
+            st.markdown("### 🔴 Sinais de Risco")
+            if detectadas_neg:
+                st.write(", ".join(detectadas_neg))
+            else:
+                st.write("Nenhum termo de risco identificado.")
         
         st.markdown("---")
-        st.markdown("**📌 Manchetes Recentes Analisadas:**")
-        for m in manchetes_encontradas:
-            st.write(f"• {m}")
+        st.markdown("### 📌 Manchetes Recentes Analisadas")
+        
+        # Lógica de Força Bruta para garantir que algo apareça
+        if manchetes_encontradas:
+            for m in manchetes_encontradas:
+                st.write(f"✅ {m}")
+        elif len(texto_total_analise) > 10:
+            # Plano B: Se a lista falhou mas o texto existe, extrai do texto
+            fallback = texto_total_analise.split('. ')
+            for item in fallback[:5]:
+                if len(item) > 10: st.write(f"👉 {item}")
+        else:
+            st.error("⚠️ Não foi possível recuperar manchetes. O Google News pode estar limitando as requisições.")
+            
+        if len(texto_total_analise) > 300:
+            st.toast(f"IA: Análise profunda concluída para {ticker}")
 
-# --- BUSCA DE DADOS ---
+# --- BUSCA DE DADOS FINANCEIROS ---
 def buscar_dados_completos(ticker):
     t = yf.Ticker(ticker)
     df = t.history(period="1y")
@@ -109,17 +131,21 @@ def buscar_dados_completos(ticker):
     df['MA200'] = df['Close'].rolling(window=200).mean()
     df['RSI'] = calcular_rsi(df['Close'])
     
-    info = t.info
-    fundamentos = {
-        "dy": info.get('dividendYield', 0) * 100 if info.get('dividendYield') else 0,
-        "pl": info.get('trailingPE', 0) if info.get('trailingPE') else 0,
-        "nome": info.get('longName', ticker),
-        "volume": info.get('averageVolume', 0)
-    }
+    try:
+        info = t.info
+        fundamentos = {
+            "dy": info.get('dividendYield', 0) * 100 if info.get('dividendYield') else 0,
+            "pl": info.get('trailingPE', 0) if info.get('trailingPE') else 0,
+            "nome": info.get('longName', ticker),
+            "volume": info.get('averageVolume', 0)
+        }
+    except:
+        fundamentos = {"dy": 0, "pl": 0, "nome": ticker, "volume": 0}
+        
     return df, fundamentos
 
 # --- LOOP PRINCIPAL ---
-tickers = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBAS3.SA'] # Adicionado Banco do Brasil para diversificar
+tickers = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBAS3.SA']
 
 for ticker in tickers:
     try:
@@ -128,7 +154,7 @@ for ticker in tickers:
         
         preco_atual = float(dados['Close'].iloc[-1])
         media_atual = float(dados['MA200'].iloc[-1])
-        rsi_atual = float(dados['RSI'].iloc[-1])
+        rsi_atual = float(dados['RSI'].iloc[-1]) if not np.isnan(dados['RSI'].iloc[-1]) else 50
         
         st.divider()
         st.header(f"🏢 {fund['nome']} ({ticker})")
@@ -140,13 +166,13 @@ for ticker in tickers:
         m3.metric("P/L", f"{fund['pl']:.2f}")
         m4.metric("Vol. Médio", f"{fund['volume']:,}")
 
-        # Gráfico
+        # Gráfico de Tendência
         st.line_chart(dados[['Close', 'MA200']])
         
-        # IA e Sentimento
+        # Execução da IA
         analise_minuciosa_ia(ticker, preco_atual, media_atual, rsi_atual)
         
     except Exception as e:
-        st.error(f"Erro ao analisar {ticker}. O sistema tentará novamente em 5 min.")
+        st.error(f"Erro ao processar {ticker}. Avançando para o próximo...")
 
-st.caption("Sistema de Monitoramento Autônomo - Engenharia de IA 2026")
+st.caption("Engenharia de IA 2026 - Blumenau, SC. Dados em tempo real via YFinance & Google RSS.")
