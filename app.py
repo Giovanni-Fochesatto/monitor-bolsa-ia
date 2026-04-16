@@ -9,7 +9,7 @@ import random
 from newspaper import Article, Config
 from streamlit_autorefresh import st_autorefresh
 
-# --- CONFIGURAÇÕES INICIAIS ---
+# --- CONFIGURAÇÕES E CACHE ---
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
@@ -18,14 +18,13 @@ except LookupError:
 st.set_page_config(page_title="Monitor IA Pro", layout="wide")
 st_autorefresh(interval=300 * 1000, key="data_refresh")
 
-# Inicializar estado do filtro
 if 'filtros_ativos' not in st.session_state:
     st.session_state.filtros_ativos = False
 
 def ativar_filtros():
     st.session_state.filtros_ativos = True
 
-# --- FUNÇÕES CORE ---
+# --- FUNÇÕES TÉCNICAS ---
 def calcular_graham(lpa, vpa):
     if lpa > 0 and vpa > 0:
         return np.sqrt(22.5 * lpa * vpa)
@@ -38,13 +37,6 @@ def calcular_rsi(data, window=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-def get_random_header():
-    agents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
-    ]
-    return random.choice(agents)
-
 @st.cache_data(ttl=600)
 def obter_dados_ticker(ticker):
     try:
@@ -54,22 +46,22 @@ def obter_dados_ticker(ticker):
     except:
         return None, None
 
-# --- BARRA LATERAL: FILTROS COM GATILHO ---
+# --- BARRA LATERAL: FILTROS E LEGENDAS ---
 st.sidebar.title("🎯 Estratégia")
 with st.sidebar.expander("📊 Ajustar Filtros", expanded=True):
-    st.write("Os filtros abaixo estão inativos até você alterá-los.")
+    st.write("Os filtros estão **desativados** (mostrando tudo). Eles ligam ao serem alterados.")
     
     f_pl = st.slider("P/L Máximo", 0.0, 50.0, 50.0, step=0.5, on_change=ativar_filtros)
-    st.sidebar.caption("P/L: Indica o tempo de retorno em anos.")
+    st.sidebar.caption("💡 P/L: Preço/Lucro. Indica em quantos anos você recuperaria o investimento.")
     
     f_pvp = st.slider("P/VP Máximo", 0.0, 10.0, 10.0, step=0.1, on_change=ativar_filtros)
-    st.sidebar.caption("P/VP: Preço sobre Valor Patrimonial.")
+    st.sidebar.caption("💡 P/VP: Indica se a ação está barata em relação ao patrimônio.")
     
     f_dy = st.slider("DY Mínimo (%)", 0.0, 20.0, 0.0, step=0.5, on_change=ativar_filtros)
-    st.sidebar.caption("DY: Rendimento de dividendos anual.")
+    st.sidebar.caption("💡 DY: Rendimento em dividendos pagos nos últimos 12 meses.")
 
-    f_ev_ebitda = st.slider("EV/EBITDA Máximo", 0.0, 30.0, 30.0, step=0.5, on_change=ativar_filtros)
-    st.sidebar.caption("EV/EBITDA: Valor da firma/Lucro Operacional.") #
+    f_div_ebitda = st.slider("Dív.Líq/EBITDA Máximo", 0.0, 10.0, 10.0, step=0.5, on_change=ativar_filtros)
+    st.sidebar.caption("💡 Dív.Líq/EBITDA: Mede o endividamento. Indica quantos anos de lucro pagariam a dívida.")
 
 if st.sidebar.button("Resetar Filtros"):
     st.session_state.filtros_ativos = False
@@ -77,28 +69,43 @@ if st.sidebar.button("Resetar Filtros"):
 
 # --- CABEÇALHO ---
 st.title("🤖 Monitor IA")
-status_filtro = "✅ Filtros Ativos" if st.session_state.filtros_ativos else "⚪ Exibindo Tudo (Filtros Desligados)"
-st.caption(f"{status_filtro} | Atualização: {time.strftime('%H:%M:%S')} | Local: Blumenau/SC")
+status_txt = "✅ Filtros Ativos" if st.session_state.filtros_ativos else "⚪ Filtros Desligados (Mostrando Tudo)"
+st.caption(f"{status_txt} | Local: Blumenau/SC")
 
-# --- PROCESSAMENTO ---
-tickers = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBAS3.SA', 'ABEV3.SA', 'SANB11.SA', 'EGIE3.SA', 'WEGE3.SA']
+# --- LISTA EXPANDIDA (Principais da B3) ---
+tickers = [
+    'PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBAS3.SA', 'BBDC4.SA', 'ABEV3.SA', 'SANB11.SA', 
+    'EGIE3.SA', 'WEGE3.SA', 'RENT3.SA', 'MGLU3.SA', 'PRIO3.SA', 'VBBR3.SA', 'CSNA3.SA',
+    'B3SA3.SA', 'ELET3.SA', 'GGBR4.SA', 'ITSA4.SA', 'JBSS3.SA', 'RAIL3.SA', 'SUZB3.SA',
+    'VIVT3.SA', 'CPLE6.SA', 'TRPL4.SA', 'KLBN11.SA', 'SAPR11.SA', 'BBSE3.SA', 'PSSA3.SA'
+]
+
 vencedoras = []
 
-for tkr in tickers:
+# --- PROCESSAMENTO ---
+progress_bar = st.progress(0)
+for i, tkr in enumerate(tickers):
+    progress_bar.progress((i + 1) / len(tickers))
     info, hist = obter_dados_ticker(tkr)
     if info and not hist.empty:
+        # Indicadores base
         pl = info.get('trailingPE', 0) or 0
         pvp = info.get('priceToBook', 0) or 0
         dy = (info.get('dividendYield', 0) or 0) * 100
-        ev_ebitda = info.get('enterpriseToEbitda', 0) or 0
         
-        # Lógica: Se filtros ativos, aplica regras. Se não, passa tudo.
-        passou_filtro = True
+        # Cálculo da Dívida Líquida / EBITDA
+        div_total = info.get('totalDebt', 0) or 0
+        caixa = info.get('totalCash', 0) or 0
+        ebitda = info.get('ebitda', 0) or 1 # Evitar divisão por zero
+        div_e = (div_total - caixa) / ebitda if ebitda != 0 else 0
+        
+        # Lógica de Filtro
+        passou = True
         if st.session_state.filtros_ativos:
-            if not (pl <= f_pl and pvp <= f_pvp and dy >= f_dy and ev_ebitda <= f_ev_ebitda):
-                passou_filtro = False
+            if not (pl <= f_pl and pvp <= f_pvp and dy >= f_dy and div_e <= f_div_ebitda):
+                passou = False
         
-        if passou_filtro:
+        if passou:
             p_atual = hist['Close'].iloc[-1]
             lpa = info.get('trailingEps', 0) or 0
             vpa = info.get('bookValue', 0) or 0
@@ -106,64 +113,42 @@ for tkr in tickers:
             upside = ((v_graham / p_atual) - 1) * 100 if v_graham > 0 else 0
             
             vencedoras.append({
-                "Empresa": info.get('shortName', tkr),
                 "Ticker": tkr,
+                "Empresa": info.get('shortName', tkr),
                 "Preço": round(p_atual, 2),
                 "P/L": round(pl, 2),
                 "DY %": round(dy, 2),
+                "Dív.Líq/EBITDA": round(div_e, 2),
                 "Preço Justo": round(v_graham, 2),
                 "Potencial %": round(upside, 2),
-                "info": info,
-                "hist": hist
+                "info": info, "hist": hist
             })
 
-# --- INTERFACE ---
+# --- INTERFACE FINAL ---
 if vencedoras:
-    st.subheader("🏆 Ranking de Ativos")
+    st.subheader("🏆 Ranking de Ativos Encontrados")
     df_rank = pd.DataFrame(vencedoras).drop(columns=['info', 'hist'])
     st.dataframe(df_rank.sort_values(by="Potencial %", ascending=False), use_container_width=True, hide_index=True)
     
     for acao in vencedoras:
         st.divider()
-        col_t, col_p = st.columns([3, 1])
-        col_t.header(f"🏢 {acao['Empresa']} ({acao['Ticker']})")
-        col_p.metric("Preço Justo (Graham)", f"R$ {acao['Preço Justo']}", f"{acao['Potencial %']}%")
+        st.header(f"🏢 {acao['Empresa']} ({acao['Ticker']})")
         
-        h = acao['hist']
-        h['MA200'] = h['Close'].rolling(window=200).mean()
-        st.line_chart(h[['Close', 'MA200']])
+        st.line_chart(acao['hist']['Close'])
 
-        c1, c2, c3, c4 = st.columns(4)
+        # Bloco de Métricas com Dívida Líquida
+        c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("P/L", acao['P/L'])
         c2.metric("DY", f"{acao['DY %']}%")
         c3.metric("P/VP", round(acao['info'].get('priceToBook', 0), 2))
-        c4.metric("EV/EBITDA", round(acao['info'].get('enterpriseToEbitda', 0), 2))
+        c4.metric("Dív.Líq/EBITDA", acao['Dív.Líq/EBITDA'])
+        c5.metric("Preço Justo (Graham)", f"R$ {acao['Preço Justo']}")
 
-        # IA e Links Oficiais
-        st.subheader("🕵️‍♂️ Inteligência e Notícias")
-        noticias = []
-        texto_noticias = ""
-        try:
+        # IA e Links
+        with st.expander("📌 Ver Manchetes e Links Oficiais"):
             url = f"https://news.google.com/rss/search?q={acao['Ticker']}+when:2d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
             feed = feedparser.parse(url)
-            for entry in feed.entries[:5]:
-                titulo = entry.title.split(' - ')[0]
-                noticias.append({"t": titulo, "l": entry.link})
-                texto_noticias += f"{titulo}. "
-        except: pass
-
-        score_p = sum(texto_noticias.lower().count(w) for w in ["alta", "lucro", "compra", "subiu"])
-        score_n = sum(texto_noticias.lower().count(w) for w in ["queda", "prejuízo", "venda", "caiu"])
-
-        v_col, l_col = st.columns([1, 2])
-        with v_col:
-            if score_p > score_n: st.success("SENTIMENTO: POSITIVO 👍")
-            elif score_n > score_p: st.error("SENTIMENTO: CAUTELA ⚠️")
-            else: st.warning("SENTIMENTO: NEUTRO ⚖️")
-        
-        with l_col:
-            with st.expander("📌 Ver Manchetes e Links Oficiais"):
-                for n in noticias:
-                    st.markdown(f"• {n['t']} [[Link]({n['l']})]")
+            for entry in feed.entries[:3]:
+                st.markdown(f"• {entry.title.split(' - ')[0]} [[Link]({entry.link})]")
 else:
-    st.info("Nenhuma ação encontrada para os critérios atuais.")
+    st.warning("Nenhuma ação atende aos filtros atuais.")
