@@ -40,28 +40,21 @@ def calcular_rsi(data, window=14):
 @st.cache_data(ttl=600)
 def obter_dados_ticker(ticker):
     try:
+        if not ticker.endswith(".SA"): ticker += ".SA"
         t = yf.Ticker(ticker)
         hist = t.history(period="1y")
+        if hist.empty: return None, None
         return t.info, hist
     except:
         return None, None
 
-# --- BARRA LATERAL: FILTROS E LEGENDAS ---
+# --- BARRA LATERAL: FILTROS ---
 st.sidebar.title("🎯 Estratégia")
 with st.sidebar.expander("📊 Ajustar Filtros", expanded=True):
-    st.write("Os filtros estão **desativados** (mostrando tudo). Eles ligam ao serem alterados.")
-    
     f_pl = st.slider("P/L Máximo", 0.0, 50.0, 50.0, step=0.5, on_change=ativar_filtros)
-    st.sidebar.caption("💡 P/L: Preço/Lucro. Indica em quantos anos você recuperaria o investimento.")
-    
     f_pvp = st.slider("P/VP Máximo", 0.0, 10.0, 10.0, step=0.1, on_change=ativar_filtros)
-    st.sidebar.caption("💡 P/VP: Indica se a ação está barata em relação ao patrimônio.")
-    
     f_dy = st.slider("DY Mínimo (%)", 0.0, 20.0, 0.0, step=0.5, on_change=ativar_filtros)
-    st.sidebar.caption("💡 DY: Rendimento em dividendos pagos nos últimos 12 meses.")
-
     f_div_ebitda = st.slider("Dív.Líq/EBITDA Máximo", 0.0, 10.0, 10.0, step=0.5, on_change=ativar_filtros)
-    st.sidebar.caption("💡 Dív.Líq/EBITDA: Mede o endividamento. Indica quantos anos de lucro pagariam a dívida.")
 
 if st.sidebar.button("Resetar Filtros"):
     st.session_state.filtros_ativos = False
@@ -69,86 +62,96 @@ if st.sidebar.button("Resetar Filtros"):
 
 # --- CABEÇALHO ---
 st.title("🤖 Monitor IA")
-status_txt = "✅ Filtros Ativos" if st.session_state.filtros_ativos else "⚪ Filtros Desligados (Mostrando Tudo)"
-st.caption(f"{status_txt} | Local: Blumenau/SC")
 
-# --- LISTA EXPANDIDA (Principais da B3) ---
-tickers = [
-    'PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBAS3.SA', 'BBDC4.SA', 'ABEV3.SA', 'SANB11.SA', 
-    'EGIE3.SA', 'WEGE3.SA', 'RENT3.SA', 'MGLU3.SA', 'PRIO3.SA', 'VBBR3.SA', 'CSNA3.SA',
-    'B3SA3.SA', 'ELET3.SA', 'GGBR4.SA', 'ITSA4.SA', 'JBSS3.SA', 'RAIL3.SA', 'SUZB3.SA',
-    'VIVT3.SA', 'CPLE6.SA', 'TRPL4.SA', 'KLBN11.SA', 'SAPR11.SA', 'BBSE3.SA', 'PSSA3.SA'
-]
+# --- NAVEGAÇÃO POR ABAS ---
+tab_monitor, tab_busca, tab_comparacao = st.tabs(["🔍 Monitor Geral", "🏢 Busca Única", "⚔️ Comparação"])
 
-vencedoras = []
-
-# --- PROCESSAMENTO ---
-progress_bar = st.progress(0)
-for i, tkr in enumerate(tickers):
-    progress_bar.progress((i + 1) / len(tickers))
-    info, hist = obter_dados_ticker(tkr)
-    if info and not hist.empty:
-        # Indicadores base
-        pl = info.get('trailingPE', 0) or 0
-        pvp = info.get('priceToBook', 0) or 0
-        dy = (info.get('dividendYield', 0) or 0) * 100
-        
-        # Cálculo da Dívida Líquida / EBITDA
-        div_total = info.get('totalDebt', 0) or 0
-        caixa = info.get('totalCash', 0) or 0
-        ebitda = info.get('ebitda', 0) or 1 # Evitar divisão por zero
-        div_e = (div_total - caixa) / ebitda if ebitda != 0 else 0
-        
-        # Lógica de Filtro
-        passou = True
-        if st.session_state.filtros_ativos:
-            if not (pl <= f_pl and pvp <= f_pvp and dy >= f_dy and div_e <= f_div_ebitda):
-                passou = False
-        
-        if passou:
-            p_atual = hist['Close'].iloc[-1]
-            lpa = info.get('trailingEps', 0) or 0
-            vpa = info.get('bookValue', 0) or 0
-            v_graham = calcular_graham(lpa, vpa)
-            upside = ((v_graham / p_atual) - 1) * 100 if v_graham > 0 else 0
-            
-            vencedoras.append({
-                "Ticker": tkr,
-                "Empresa": info.get('shortName', tkr),
-                "Preço": round(p_atual, 2),
-                "P/L": round(pl, 2),
-                "DY %": round(dy, 2),
-                "Dív.Líq/EBITDA": round(div_e, 2),
-                "Preço Justo": round(v_graham, 2),
-                "Potencial %": round(upside, 2),
-                "info": info, "hist": hist
-            })
-
-# --- INTERFACE FINAL ---
-if vencedoras:
-    st.subheader("🏆 Ranking de Ativos Encontrados")
-    df_rank = pd.DataFrame(vencedoras).drop(columns=['info', 'hist'])
-    st.dataframe(df_rank.sort_values(by="Potencial %", ascending=False), use_container_width=True, hide_index=True)
+# --- ABA 1: MONITOR GERAL ---
+with tab_monitor:
+    tickers_b3 = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBAS3.SA', 'BBDC4.SA', 'ABEV3.SA', 'SANB11.SA', 'EGIE3.SA', 'WEGE3.SA', 'TRPL4.SA', 'SAPR11.SA']
+    vencedoras = []
     
-    for acao in vencedoras:
-        st.divider()
-        st.header(f"🏢 {acao['Empresa']} ({acao['Ticker']})")
+    status_txt = "✅ Filtros Ativos" if st.session_state.filtros_ativos else "⚪ Filtros Desligados"
+    st.caption(f"{status_txt} | Local: Blumenau/SC")
+
+    for tkr in tickers_b3:
+        info, hist = obter_dados_ticker(tkr)
+        if info and not hist.empty:
+            pl = info.get('trailingPE', 0) or 0
+            pvp = info.get('priceToBook', 0) or 0
+            dy = (info.get('dividendYield', 0) or 0) * 100
+            div_e = (info.get('totalDebt', 0) - info.get('totalCash', 0)) / (info.get('ebitda', 1) or 1)
+            
+            passou = True
+            if st.session_state.filtros_ativos:
+                if not (pl <= f_pl and pvp <= f_pvp and dy >= f_dy and div_e <= f_div_ebitda):
+                    passou = False
+            
+            if passou:
+                vencedoras.append({"Ticker": tkr, "P/L": round(pl, 2), "DY %": round(dy, 2), "Dív.EBITDA": round(div_e, 2), "info": info, "hist": hist})
+
+    if vencedoras:
+        df_rank = pd.DataFrame([{"Ticker": x["Ticker"], "P/L": x["P/L"], "DY %": x["DY %"], "Dív.EBITDA": x["Dív.EBITDA"]} for x in vencedoras])
+        st.dataframe(df_rank, use_container_width=True, hide_index=True)
+
+# --- ABA 2: BUSCA ÚNICA ---
+with tab_busca:
+    busca_tkr = st.text_input("Digite o Ticker da Ação (ex: PETR4, MGLU3):").upper()
+    if busca_tkr:
+        info, hist = obter_dados_ticker(busca_tkr)
+        if info:
+            st.header(f"🏢 {info.get('longName')}")
+            st.line_chart(hist['Close'])
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Preço Atual", f"R$ {hist['Close'].iloc[-1]:.2f}")
+            c2.metric("P/L", round(info.get('trailingPE', 0), 2))
+            c3.metric("DY", f"{info.get('dividendYield', 0)*100:.2f}%")
+            c4.metric("Dív.Líq/EBITDA", round((info.get('totalDebt', 0)-info.get('totalCash',0))/info.get('ebitda',1), 2))
+            
+            with st.expander("📌 Notícias Recentes"):
+                url = f"https://news.google.com/rss/search?q={busca_tkr}+when:2d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+                feed = feedparser.parse(url)
+                for entry in feed.entries[:5]:
+                    st.markdown(f"• {entry.title} [[Link]({entry.link})]")
+        else:
+            st.error("Ticker não encontrado.")
+
+# --- ABA 3: COMPARAÇÃO ---
+with tab_comparacao:
+    col_a, col_b = st.columns(2)
+    tkr_a = col_a.text_input("Ação A:", value="PETR4").upper()
+    tkr_b = col_b.text_input("Ação B:", value="VALE3").upper()
+    
+    if tkr_a and tkr_b:
+        info_a, hist_a = obter_dados_ticker(tkr_a)
+        info_b, hist_b = obter_dados_ticker(tkr_b)
         
-        st.line_chart(acao['hist']['Close'])
-
-        # Bloco de Métricas com Dívida Líquida
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("P/L", acao['P/L'])
-        c2.metric("DY", f"{acao['DY %']}%")
-        c3.metric("P/VP", round(acao['info'].get('priceToBook', 0), 2))
-        c4.metric("Dív.Líq/EBITDA", acao['Dív.Líq/EBITDA'])
-        c5.metric("Preço Justo (Graham)", f"R$ {acao['Preço Justo']}")
-
-        # IA e Links
-        with st.expander("📌 Ver Manchetes e Links Oficiais"):
-            url = f"https://news.google.com/rss/search?q={acao['Ticker']}+when:2d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
-            feed = feedparser.parse(url)
-            for entry in feed.entries[:3]:
-                st.markdown(f"• {entry.title.split(' - ')[0]} [[Link]({entry.link})]")
-else:
-    st.warning("Nenhuma ação atende aos filtros atuais.")
+        if info_a and info_b:
+            # Gráfico Comparativo de Performance (Normalizado)
+            st.subheader("📈 Performance Relativa (1 Ano)")
+            df_comp = pd.DataFrame({
+                tkr_a: (hist_a['Close'] / hist_a['Close'].iloc[0]) * 100,
+                tkr_b: (hist_b['Close'] / hist_b['Close'].iloc[0]) * 100
+            })
+            st.line_chart(df_comp)
+            
+            # Tabela de Duelo
+            st.subheader("⚔️ Duelo de Indicadores")
+            dados_comp = {
+                "Indicador": ["P/L", "P/VP", "DY %", "ROE %", "Dív.Líq/EBITDA"],
+                tkr_a: [
+                    round(info_a.get('trailingPE', 0), 2),
+                    round(info_a.get('priceToBook', 0), 2),
+                    f"{info_a.get('dividendYield', 0)*100:.2f}%",
+                    f"{info_a.get('returnOnEquity', 0)*100:.2f}%",
+                    round((info_a.get('totalDebt', 0)-info_a.get('totalCash',0))/info_a.get('ebitda',1), 2)
+                ],
+                tkr_b: [
+                    round(info_b.get('trailingPE', 0), 2),
+                    round(info_b.get('priceToBook', 0), 2),
+                    f"{info_b.get('dividendYield', 0)*100:.2f}%",
+                    f"{info_b.get('returnOnEquity', 0)*100:.2f}%",
+                    round((info_b.get('totalDebt', 0)-info_b.get('totalCash',0))/info_b.get('ebitda',1), 2)
+                ]
+            }
+            st.table(pd.DataFrame(dados_comp))
