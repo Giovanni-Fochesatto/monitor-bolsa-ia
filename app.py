@@ -37,6 +37,20 @@ def calcular_rsi(data, window=14):
     rsi = 100 - (100 / (1 + rs))
     return float(rsi.iloc[-1])
 
+# --- ESTRATÉGIA VALUE INVESTING ---
+def calcular_score_value(info):
+    """Avalia a empresa com base em métricas de valor (Value Investing)"""
+    score = 0
+    # 1. P/L abaixo da média histórica aceitável (ex: 15)
+    if 0 < info.get('trailingPE', 99) < 15: score += 1
+    # 2. P/VP abaixo de 1.5 (Graham)
+    if 0 < info.get('priceToBook', 99) < 1.5: score += 1
+    # 3. Dividend Yield robusto (> 5%)
+    if (info.get('dividendYield', 0) or 0) * 100 > 5: score += 1
+    # 4. Margem Operacional positiva
+    if (info.get('operatingMargins', 0) or 0) > 0.1: score += 1
+    return score
+
 # [MELHORADO] Simulação de Assertividade 5 Anos com Filtros de Tendência
 def simular_performance_historica(hist):
     """Analisa RSI + Média Móvel 200 (Tendência) + MACD nos últimos 5 anos"""
@@ -147,6 +161,7 @@ st.sidebar.metric("Bitcoin", f"R$ {cambio['Bitcoin'][0]:.0f}", f"{cambio['Bitcoi
 st.sidebar.divider()
 
 mercado_selecionado = st.sidebar.radio("Escolha o Mercado:", ["Brasil", "EUA"], on_change=ativar_filtros)
+estrategia_ativa = st.sidebar.selectbox("Foco da Análise:", ["Análise Técnica + Notícias", "Value Investing (Graham/Buffett)"])
 busca_direta = st.sidebar.text_input(f"🔍 Busca Rápida ({mercado_selecionado}):").upper()
 
 with st.sidebar.expander("📊 Filtros de Valuation", expanded=True):
@@ -217,65 +232,76 @@ for tkr in tickers_para_processar:
         score_p = sum(noticias_texto.count(w) for w in ["alta", "lucro", "compra", "subiu", "dividend", "profit", "buy"])
         score_n = sum(noticias_texto.count(w) for w in ["queda", "prejuízo", "venda", "caiu", "risk", "loss", "sell"])
         rsi_val = calcular_rsi(hist['Close'])
+        score_value = calcular_score_value(info)
 
         # Cálculo de Assertividades (Agora baseado em 5 anos e filtros extras) + Novas variáveis de contagem
         taxa_compra, taxa_venda, retorno_medio, total_c, total_v = simular_performance_historica(hist)
 
         motivo_detalhe = ""
-        if rsi_val > 70 and score_n > score_p:
-            veredito, cor = "VENDA 🚨", "error"
-            motivo_detalhe = f"RSI alto ({rsi_val:.1f}) e notícias negativas. Possível topo."
-        elif rsi_val > 75:
-            veredito, cor = "VENDA 🚨", "error"
-            motivo_detalhe = f"RSI em nível extremo ({rsi_val:.1f}). Ativo sobrecomprado."
-        elif score_p > score_n and rsi_val < 65:
-            veredito, cor = "COMPRA ✅", "success"
-            motivo_detalhe = f"Notícias positivas e RSI saudável ({rsi_val:.1f})."
-        elif score_n > score_p or rsi_val > 70:
-            veredito, cor = "CAUTELA ⚠️", "error"
-            lista_motivos = []
-            if rsi_val > 70: lista_motivos.append(f"RSI alto ({rsi_val:.1f})")
-            if score_n > score_p: lista_motivos.append("Sentimento negativo")
-            motivo_detalhe = " | ".join(lista_motivos)
+        # LOGICA DE VEREDITO ADAPTADA À ESTRATÉGIA SELECIONADA
+        if estrategia_ativa == "Value Investing (Graham/Buffett)":
+            if upside > 20 and score_value >= 3:
+                veredito, cor = "VALOR ✅", "success"
+                motivo_detalhe = f"Forte margem de segurança ({upside:.1f}%) e bons fundamentos (Score: {score_value}/4)."
+            elif upside < 0:
+                veredito, cor = "CARO 🚨", "error"
+                motivo_detalhe = "Preço acima do valor intrínseco de Graham."
+            else:
+                veredito, cor = "NEUTRO ⚖️", "warning"
+                motivo_detalhe = "Ativo próximo ao preço justo, sem margem de segurança clara."
         else:
-            veredito, cor = "NEUTRO ⚖️", "warning"
-            motivo_detalhe = "Indicadores técnicos e notícias em equilíbrio."
+            if rsi_val > 70 and score_n > score_p:
+                veredito, cor = "VENDA 🚨", "error"
+                motivo_detalhe = f"RSI alto ({rsi_val:.1f}) e notícias negativas. Possível topo."
+            elif rsi_val > 75:
+                veredito, cor = "VENDA 🚨", "error"
+                motivo_detalhe = f"RSI em nível extremo ({rsi_val:.1f}). Ativo sobrecomprado."
+            elif score_p > score_n and rsi_val < 65:
+                veredito, cor = "COMPRA ✅", "success"
+                motivo_detalhe = f"Notícias positivas e RSI saudável ({rsi_val:.1f})."
+            elif score_n > score_p or rsi_val > 70:
+                veredito, cor = "CAUTELA ⚠️", "error"
+                lista_motivos = []
+                if rsi_val > 70: lista_motivos.append(f"RSI alto ({rsi_val:.1f})")
+                if score_n > score_p: lista_motivos.append("Sentimento negativo")
+                motivo_detalhe = " | ".join(lista_motivos)
+            else:
+                veredito, cor = "NEUTRO ⚖️", "warning"
+                motivo_detalhe = "Indicadores técnicos e notícias em equilíbrio."
 
         dados_vencedoras.append({
             "Ticker": tkr, "Empresa": info.get('shortName', tkr), "Preço": p_atual,
             "P/L": pl, "DY %": dy, "Dívida": div_e, "Graham": p_justo, "Upside %": upside,
             "Veredito": veredito, "Cor": cor, "Motivo": motivo_detalhe, "RSI": rsi_val, "Hist": hist, "Links": lista_links,
             "TaxaCompra": taxa_compra, "TaxaVenda": taxa_venda, "RetornoMedio": retorno_medio,
-            "QtdCompra": total_c, "QtdVenda": total_v
+            "QtdCompra": total_c, "QtdVenda": total_v, "ValueScore": score_value
         })
 
 # --- INTERFACE ---
 if dados_vencedoras:
-    st.subheader("🏆 Ranking de Oportunidades & Assertividade (Dados 5 Anos)")
+    st.subheader(f"🏆 Ranking de Oportunidades - Estratégia: {estrategia_ativa}")
     
     # Adicionando Legendas
     with st.expander("📌 Legenda de Sinais e Vereditos"):
         st.markdown("""
-        * **COMPRA ✅**: RSI baixo/médio com notícias favoráveis.
-        * **VENDA 🚨**: RSI extremo (>70) ou notícias negativas em topos técnicos.
+        * **VALOR ✅**: (Estratégia Value) Ativo com grande desconto frente ao preço de Graham e bons fundamentos.
+        * **COMPRA ✅**: (Estratégia Técnica) RSI baixo/médio com notícias favoráveis.
+        * **VENDA / CARO 🚨**: RSI extremo ou preço muito acima do valor justo.
         * **CAUTELA ⚠️**: Divergência entre preço e sentimento ou RSI entrando em zona de risco.
-        * **NEUTRO ⚖️**: Sem sinais claros de entrada ou saída no momento.
-        * **Graham**: Valor intrínseco baseado em Benjamin Graham. O Upside mostra o potencial de valorização até o preço justo.
+        * **Graham**: Valor intrínseco baseado em ativos e lucros. O Upside mostra o potencial de valorização.
         """)
 
-    df_resumo = pd.DataFrame(dados_vencedoras)[["Ticker", "Preço", "DY %", "Upside %", "Veredito", "Motivo", "TaxaCompra", "QtdCompra", "TaxaVenda", "QtdVenda"]]
+    df_resumo = pd.DataFrame(dados_vencedoras)[["Ticker", "Preço", "DY %", "Upside %", "Veredito", "Motivo", "TaxaCompra", "TaxaVenda"]]
     
     st.dataframe(
         df_resumo.sort_values(by="Upside %", ascending=False), 
         use_container_width=True, 
         hide_index=True,
         column_config={
-            "Veredito": st.column_config.TextColumn("Veredito", help="Baseado em RSI + Notícias"),
+            "Veredito": st.column_config.TextColumn("Veredito"),
             "Motivo": st.column_config.TextColumn("Motivo da IA", width="medium"),
             "TaxaCompra": st.column_config.NumberColumn("Assert. Compra (5y)", format="%.1f%%"),
-            "QtdCompra": st.column_config.NumberColumn("Qtd Compra", help="Número de vezes que o sinal de compra apareceu"),
-            "TaxaVenda": st.column_config.NumberColumn("Assert. Venda (5y)", format="%.1f%%"),
-            "QtdVenda": st.column_config.NumberColumn("Qtd Venda", help="Número de vezes que o sinal de venda apareceu")
+            "TaxaVenda": st.column_config.NumberColumn("Assert. Venda (5y)", format="%.1f%%")
         }
     )
 
@@ -284,14 +310,13 @@ if dados_vencedoras:
         col_tit, col_ver, col_acc_c, col_acc_v = st.columns([3, 1, 1, 1])
         col_tit.header(f"🏢 {acao['Empresa']} ({acao['Ticker']})")
         
-        # Exibição da % e Quantidade nas métricas superiores
         col_acc_c.metric("Assertividade Compra", f"{acao['TaxaCompra']:.1f}%", f"{acao['QtdCompra']} sinais")
         col_acc_v.metric("Assertividade Venda", f"{acao['TaxaVenda']:.1f}%", f"{acao['QtdVenda']} sinais")
         
         if acao["Cor"] == "success": 
             col_ver.success(f"**{acao['Veredito']}**")
         elif acao["Cor"] == "error": 
-            col_ver.error(f"**{acao['Veredito']}**", icon="🚨" if "VENDA" in acao['Veredito'] else "⚠️")
+            col_ver.error(f"**{acao['Veredito']}**")
             if acao["Motivo"]: st.info(f"👉 **Atenção:** {acao['Motivo']}")
         else: 
             col_ver.warning(f"**{acao['Veredito']}**")
@@ -304,14 +329,16 @@ if dados_vencedoras:
         c3.metric("DY", f"{acao['DY %']:.2f}%")
         c4.metric("Dív.Líq/EBITDA", round(acao['Dívida'], 2))
         
-        msg_ajuda = acao["Motivo"] if acao["Motivo"] else "Valor baseado em ativos e lucro (Benjamin Graham)."
-        c5.metric("Graham", f"{moeda_simbolo} {acao['Graham']:.2f}", f"{acao['Upside %']:.1f}%", help=msg_ajuda)
+        c5.metric("Graham", f"{moeda_simbolo} {acao['Graham']:.2f}", f"{acao['Upside %']:.1f}%")
 
-        with st.expander(f"📊 Detalhes Técnicos e 📌 Notícias: {acao['Ticker']}"):
-            st.write(f"📈 RSI (Força Relativa): {acao['RSI']:.2f}")
-            # Detalhamento com as quantidades incluídas
-            st.write(f"🎯 Histórico 5 Anos: Compra {acao['TaxaCompra']:.1f}% ({acao['QtdCompra']} vezes) | Venda {acao['TaxaVenda']:.1f}% ({acao['QtdVenda']} vezes)")
-            st.write(f"📝 **Motivo do Veredito:** {acao['Motivo']}")
+        with st.expander(f"📊 Detalhes Fundamentalistas e Técnicos: {acao['Ticker']}"):
+            col_inf1, col_inf2 = st.columns(2)
+            with col_inf1:
+                st.write(f"**Fundamentos (Value Score):** {acao['ValueScore']}/4")
+                st.progress(acao['ValueScore'] / 4)
+                st.write(f"📈 RSI: {acao['RSI']:.2f}")
+            with col_inf2:
+                st.write(f"📝 **Motivo IA:** {acao['Motivo']}")
             st.markdown("---")
             st.markdown("**Últimas Manchetes:**")
             for n in acao['Links']: st.markdown(f"• [{n['titulo']}]({n['link']})")
