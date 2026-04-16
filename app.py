@@ -45,32 +45,43 @@ def calcular_rsi(data, window=14):
 def analise_fundamentalista_i10(ticker, info):
     st.subheader(f"📊 Indicadores Fundamentalistas (Estilo Investidor 10)")
     try:
+        # Extração de métricas
         pl = info.get('trailingPE', 0)
         pvp = info.get('priceToBook', 0)
         roe = info.get('returnOnEquity', 0) * 100
         dy = info.get('dividendYield', 0) * 100
         margem = info.get('profitMargins', 0) * 100
-        ebitda = info.get('enterpriseToEbitda', 0)
+        ev_ebitda = info.get('enterpriseToEbitda', 0)
+        
+        # Cálculo Dívida Líquida / EBITDA
+        # Algumas empresas podem não ter o dado de dívida disponível via API gratuita
+        divida_liquida = info.get('totalDebt', 0) - info.get('totalCash', 0)
+        ebitda_valor = info.get('ebitda', 0)
+        div_ebitda = divida_liquida / ebitda_valor if ebitda_valor and ebitda_valor != 0 else 0
 
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        # Layout de Cards de Indicadores (7 colunas agora)
+        c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
         c1.metric("P/L", f"{pl:.2f}" if pl else "---")
         c2.metric("P/VP", f"{pvp:.2f}" if pvp else "---")
         c3.metric("DY", f"{dy:.2f}%")
         c4.metric("ROE", f"{roe:.1f}%")
         c5.metric("Marg. Líq.", f"{margem:.1f}%")
-        c6.metric("EV/EBITDA", f"{ebitda:.2f}" if ebitda else "---")
+        c6.metric("EV/EBITDA", f"{ev_ebitda:.2f}" if ev_ebitda else "---")
+        c7.metric("Dív.Líq/EBITDA", f"{div_ebitda:.2f}" if div_ebitda != 0 else "---")
 
         with st.expander("🎓 O que significam esses números? (Legenda)"):
             st.markdown("""
             * **P/L:** Preço sobre Lucro. Indica em quantos anos você recuperaria o investimento através dos lucros.
-            * **P/VP:** Preço sobre Valor Patrimonial. Abaixo de 1,00 pode indicar que a ação está "barata" em relação ao patrimônio físico.
-            * **DY (Dividend Yield):** O rendimento em dividendos pagos aos acionistas nos últimos 12 meses.
-            * **ROE:** Retorno sobre Patrimônio. Mede a eficiência da empresa em gerar lucro com o dinheiro dos sócios.
-            * **Margem Líquida:** Indica a porcentagem de lucro que a empresa consegue sobre a sua receita total.
-            * **EV/EBITDA:** Valor da Empresa sobre o Lucro Operacional. Ajuda a comparar o valor do negócio (incluindo dívidas) com a sua geração de caixa operacional. Geralmente, quanto menor, mais "barata" a empresa está.
+            * **P/VP:** Preço sobre Valor Patrimonial. Abaixo de 1,00 pode indicar que a ação está barata.
+            * **DY (Dividend Yield):** Rendimento em dividendos pagos nos últimos 12 meses.
+            * **ROE:** Retorno sobre Patrimônio. Mede a eficiência em gerar lucro com o capital dos sócios.
+            * **Margem Líquida:** Porcentagem de lucro real sobre a receita total.
+            * **EV/EBITDA:** Valor da empresa (com dívidas) dividido pelo lucro operacional.
+            * **Dívida Líquida / EBITDA:** Indica quanto tempo a empresa levaria para pagar sua dívida usando apenas sua geração de caixa operacional. 
+                * *Valores abaixo de 2.0 são considerados saudáveis. Acima de 3.0 acende um sinal de alerta sobre o endividamento.*
             """)
     except Exception:
-        st.warning("Indicadores fundamentalistas temporariamente indisponíveis.")
+        st.warning("Alguns indicadores fundamentalistas estão indisponíveis para este ativo.")
 
 # --- FUNÇÃO DE IA E SENTIMENTO ---
 def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
@@ -98,12 +109,12 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
                 except:
                     texto_total_analise += f"{titulo}. "
         else:
-            st.info("Aguardando novas notícias para análise de sentimento.")
+            st.info("Nenhuma notícia recente encontrada.")
     except Exception:
-        st.error("Erro ao processar radar de notícias.")
+        st.error("Erro no sistema de notícias.")
 
-    positivas = ["alta", "dividendo", "lucro", "compra", "crescimento", "subiu", "positivo", "recorde", "recompra", "otimismo"]
-    negativas = ["queda", "risco", "prejuízo", "venda", "caiu", "dívida", "crise", "negativo", "corte", "baixa"]
+    positivas = ["alta", "dividendo", "lucro", "compra", "crescimento", "subiu", "positivo", "recorde", "recompra"]
+    negativas = ["queda", "risco", "prejuízo", "venda", "caiu", "dívida", "crise", "negativo", "corte"]
     
     texto_limpo = texto_total_analise.lower()
     otimismo = sum(texto_limpo.count(p) for p in positivas)
@@ -119,10 +130,8 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
             st.warning("**VEREDITO: NEUTRO ⚖️**")
 
     with col_i:
-        status_rsi = "Sobrecomprado (Caro)" if rsi_atual > 70 else "Sobrevendido (Barato)" if rsi_atual < 30 else "Neutro"
-        st.write(f"📊 **Técnica:** {'Acima' if preco > media else 'Abaixo'} da MA200")
-        st.write(f"📈 **RSI:** {rsi_atual:.2f} ({status_rsi})")
-        st.write(f"🧠 **Sentimento IA:** {otimismo} Sinais Positivos | {pessimismo} Sinais de Risco")
+        st.write(f"📊 Técnica: {'Acima' if preco > media else 'Abaixo'} da MA200 | RSI: {rsi_atual:.2f}")
+        st.write(f"🧠 Sentimento: {otimismo} Positivos | {pessimismo} Negativos")
 
     with st.expander("📌 Ver Manchetes Analisadas"):
         for m in manchetes_encontradas:
@@ -133,8 +142,7 @@ def buscar_dados(ticker):
     try:
         t = yf.Ticker(ticker)
         df = t.history(period="1y")
-        if df.empty:
-            return None, None
+        if df.empty: return None, None
         
         df['MA200'] = df['Close'].rolling(window=200).mean()
         df['RSI'] = calcular_rsi(df['Close'])
@@ -160,4 +168,4 @@ for ticker in tickers:
         analise_fundamentalista_i10(ticker, info)
         analise_minuciosa_ia(ticker, preco_atual, media_atual, rsi_atual)
 
-st.caption("Engenharia de IA 2026 - Painel consolidado com indicadores e análise de sentimento.")
+st.caption("Engenharia de IA 2026 - Gestão de Risco e Endividamento Atualizada.")
