@@ -16,7 +16,7 @@ except LookupError:
 
 st.set_page_config(page_title="IA Investidor Pro", layout="wide")
 
-# Auto-refresh a cada 5 minutos para manter os dados de Blumenau atualizados
+# Auto-refresh a cada 5 minutos
 st_autorefresh(interval=300 * 1000, key="data_refresh")
 
 st.title("🤖 Monitor IA: Automação B3 Pro")
@@ -30,11 +30,11 @@ def calcular_rsi(data, window=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-# --- FUNÇÃO DE ANÁLISE DE NOTÍCIAS E SENTIMENTO (VERSÃO ULTRA-RESILIENTE) ---
+# --- FUNÇÃO DE ANÁLISE DE NOTÍCIAS (VERSÃO BLINDADA) ---
 def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
     st.subheader(f"🕵️‍♂️ Inteligência de Mercado: {ticker}")
     
-    # GARANTIA ANTI-TELA PRETA: Inicialização de variáveis
+    # Inicialização preventiva para evitar erro de variável não definida (Tela Preta)
     manchetes_encontradas = []
     texto_total_analise = ""
     detectadas_pos = []
@@ -42,29 +42,28 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
     otimismo = 0
     pessimismo = 0
 
-    # 1. Configuração de Bypass de Bot
+    # Configuração de Request para evitar bloqueios
     timestamp = int(time.time())
     url_news = f"https://news.google.com/rss/search?q={ticker}+when:2d&hl=pt-BR&gl=BR&ceid=BR:pt&t={timestamp}"
     
     user_config = Config()
-    user_config.browser_user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+    user_config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
     user_config.request_timeout = 15
     user_config.fetch_images = False 
 
     try:
-        # 2. Captura do Feed
         feed = feedparser.parse(url_news)
-        
         if feed.entries:
-            with st.spinner(f'IA vasculhando fontes para {ticker}...'):
+            with st.spinner(f'IA analisando notícias de {ticker}...'):
                 for entry in feed.entries[:5]: 
-                    # Passo Crítico: Guardar a manchete antes de qualquer erro de download
+                    # Salva o título imediatamente
                     titulo = entry.title.split(' - ')[0]
                     manchetes_encontradas.append(titulo)
                     texto_total_analise += f"{titulo}. "
                     
+                    # Tentativa de extração do corpo da notícia
                     try:
-                        time.sleep(1) # Jitter para evitar bloqueio de IP
+                        time.sleep(1) # Delay humano para não ser bloqueado
                         article = Article(entry.link, config=user_config)
                         article.download()
                         article.parse()
@@ -72,4 +71,61 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
                     except:
                         continue 
         else:
-            st
+            st.info(f"Sem notícias recentes para {ticker} nas últimas 48h.")
+    except Exception as e:
+        st.error(f"Erro no radar de notícias: {e}")
+
+    # --- MOTOR DE DECISÃO (LÓGICA DE SENTIMENTO) ---
+    positivas = ["alta", "dividendo", "lucro", "compra", "crescimento", "ebitda", "subiu", "positivo", "recorde", "valorização", "superou", "recompra"]
+    negativas = ["queda", "risco", "prejuízo", "venda", "caiu", "dívida", "crise", "negativo", "abaixo", "desvalorização", "corte", "inflação"]
+
+    texto_limpo = texto_total_analise.lower()
+    detectadas_pos = list(set([p for p in positivas if p in texto_limpo]))
+    detectadas_neg = list(set([p for p in negativas if p in texto_limpo]))
+    
+    otimismo = sum(texto_limpo.count(p) for p in positivas)
+    pessimismo = sum(texto_limpo.count(p) for p in negativas)
+
+    # --- EXIBIÇÃO DO VEREDITO ---
+    status_rsi = "Caro" if rsi_atual > 70 else "Barato" if rsi_atual < 30 else "Neutro"
+    
+    col_v, col_i = st.columns([1, 2])
+    with col_v:
+        if preco > media and otimismo > pessimismo:
+            st.success("**VEREDITO: COMPRA ✅**")
+        elif preco < media and pessimismo > otimismo:
+            st.error("**VEREDITO: EVITAR/VENDA ❌**")
+        else:
+            st.warning("**VEREDITO: NEUTRO / OBSERVAR ⚖️**")
+
+    with col_i:
+        st.write(f"**Análise Técnica:** {'Acima' if preco > media else 'Abaixo'} da média de 200 dias.")
+        st.write(f"**Indicador RSI:** {rsi_atual:.2f} ({status_rsi})")
+
+    # --- RELATÓRIO DE DETALHES ---
+    with st.expander("🔍 Detalhes da Varredura de IA", expanded=True):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("### 🟢 Sinais Positivos")
+            st.write(", ".join(detectadas_pos) if detectadas_pos else "Nenhum sinal claro identificado.")
+        with c2:
+            st.markdown("### 🔴 Sinais de Risco")
+            st.write(", ".join(detectadas_neg) if detectadas_neg else "Nenhum risco imediato detectado.")
+        
+        st.write("---")
+        st.markdown("### 📌 Manchetes Processadas")
+        if manchetes_encontradas:
+            for m in manchetes_encontradas:
+                st.write(f"✅ {m}")
+        else:
+            st.error("⚠️ Bloqueio de requisição: O Google News restringiu a captura de manchetes agora.")
+
+# --- BUSCA DE DADOS FINANCEIROS ---
+def buscar_dados_completos(ticker):
+    try:
+        t = yf.Ticker(ticker)
+        df = t.history(period="1y")
+        if df.empty: return None, None
+        
+        df['MA200'] = df['Close'].rolling(window=200).mean()
+        df['RSI'] = calcular_rsi(df['Close'])
