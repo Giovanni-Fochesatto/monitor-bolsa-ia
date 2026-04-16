@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>✅ Código Refatorado Completo - Monitor IA Pro</title>
+    <title> Código Refatorado Completo - Monitor IA Pro</title>
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.6; max-width: 1000px; margin: 40px auto; padding: 20px; background: #f8f9fa; }
         pre { background: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 12px; overflow-x: auto; font-size: 14px; }
