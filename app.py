@@ -6,7 +6,6 @@ import feedparser
 import nltk
 import numpy as np
 import random
-from newspaper import Article, Config
 from streamlit_autorefresh import st_autorefresh
 
 # --- CONFIGURAÇÕES E CACHE ---
@@ -25,14 +24,21 @@ def ativar_filtros():
     st.session_state.filtros_ativos = True
 
 # --- FUNÇÕES TÉCNICAS ---
+def calcular_graham(lpa, vpa):
+    """
+    Calcula o Preço Justo de Graham: sqrt(22.5 * LPA * VPA)
+    Onde 22.5 é o multiplicador máximo (P/L de 15 x P/VP de 1.5).
+    """
+    if lpa > 0 and vpa > 0:
+        return np.sqrt(22.5 * lpa * vpa)
+    return 0
+
 def calcular_rsi(data, window=14):
     delta = data.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
     rs = gain / loss
-    # Correção da lógica de retorno do RSI
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+    return 100 - (100 / (1 + rs))
 
 @st.cache_data(ttl=600)
 def obter_dados_ticker(ticker):
@@ -46,8 +52,6 @@ def obter_dados_ticker(ticker):
 
 # --- BARRA LATERAL: FILTROS E BUSCA ---
 st.sidebar.title("🎯 Estratégia e Busca")
-
-# Área de Pesquisa Única
 busca_direta = st.sidebar.text_input("🔍 Buscar Ação Única:", placeholder="Ex: PETR4").upper()
 
 st.sidebar.divider()
@@ -67,15 +71,12 @@ st.title("🤖 Monitor IA")
 st.caption(f"Atualização: {time.strftime('%H:%M:%S')} | Local: Blumenau/SC")
 
 # --- LISTA AMPLIADA DA BOLSA BRASILEIRA ---
-# Incluindo as principais Blue Chips e Small Caps
 tickers_b3 = [
     'PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'ABEV3', 'SANB11', 'EGIE3', 
     'WEGE3', 'TRPL4', 'SAPR11', 'ITSA4', 'B3SA3', 'ELET3', 'GGBR4', 'JBSS3', 
-    'RENT3', 'SUZB3', 'RAIL3', 'VIVT3', 'CPLE6', 'BBSE3', 'PSSA3', 'HYPE3', 
-    'CSNA3', 'GOAU4', 'UGPA3', 'PRIO3', 'LREN3', 'RDOR3', 'RADL3', 'TOTS3'
+    'RENT3', 'SUZB3', 'RAIL3', 'VIVT3', 'CPLE6', 'BBSE3', 'PSSA3', 'HYPE3'
 ]
 
-# --- LÓGICA DE EXIBIÇÃO ---
 tickers_para_processar = [busca_direta] if busca_direta else tickers_b3
 vencedoras_count = 0
 
@@ -89,7 +90,13 @@ for tkr in tickers_para_processar:
         ebitda = info.get('ebitda', 1) or 1
         div_e = (info.get('totalDebt', 0) - info.get('totalCash', 0)) / ebitda
         
-        # Lógica de Filtro
+        # Cálculo de Graham e Upside
+        lpa = info.get('trailingEps', 0) or 0
+        vpa = info.get('bookValue', 0) or 0
+        p_justo = calcular_graham(lpa, vpa)
+        p_atual = hist['Close'].iloc[-1]
+        upside = ((p_justo / p_atual) - 1) * 100 if p_justo > 0 else 0
+        
         passou = True
         if not busca_direta and st.session_state.filtros_ativos:
             if not (pl <= f_pl and pvp <= f_pvp and dy >= f_dy and div_e <= f_div_ebitda):
@@ -98,50 +105,24 @@ for tkr in tickers_para_processar:
         if passou:
             vencedoras_count += 1
             st.divider()
-            # Layout clássico: Título e Gráfico
             st.header(f"🏢 {info.get('longName', tkr)}")
             st.line_chart(hist['Close'])
 
-            # Cards de Indicadores Fundamentais
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Preço Atual", f"R$ {hist['Close'].iloc[-1]:.2f}")
+            # Cards de Indicadores (Incluindo Graham)
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Preço Atual", f"R$ {p_atual:.2f}")
             c2.metric("P/L", round(pl, 2))
             c3.metric("DY", f"{dy:.2f}%")
             c4.metric("Dív.Líq/EBITDA", round(div_e, 2))
+            c5.metric("Preço Justo (Graham)", f"R$ {p_justo:.2f}", f"{upside:.1f}%")
 
             # Inteligência de Mercado e Links
-            st.subheader(f"🕵️‍♂️ Inteligência de Mercado: {tkr}")
-            
-            noticias = []
-            texto_sentimento = ""
-            try:
+            with st.expander("📌 Ver Manchetes e Sentimento IA"):
+                st.write(f"📈 RSI Atual: {calcular_rsi(hist['Close']).iloc[-1]:.2f}")
                 url = f"https://news.google.com/rss/search?q={tkr}+when:2d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
                 feed = feedparser.parse(url)
                 for entry in feed.entries[:3]:
-                    titulo = entry.title.split(' - ')[0]
-                    noticias.append({"t": titulo, "l": entry.link})
-                    texto_sentimento += f"{titulo}. "
-            except: pass
-
-            score_p = sum(texto_sentimento.lower().count(w) for w in ["alta", "lucro", "compra", "subiu"])
-            score_n = sum(texto_sentimento.lower().count(w) for w in ["queda", "prejuízo", "venda", "caiu"])
-
-            col_v, col_r = st.columns([1, 1])
-            with col_v:
-                if score_p > score_n: st.success("**VEREDITO: COMPRA ✅**")
-                elif score_n > score_p: st.error("**VEREDITO: CAUTELA ⚠️**")
-                else: st.warning("**VEREDITO: NEUTRO ⚖️**")
-            
-            with col_r:
-                # Correção das f-strings para evitar erro de fechamento
-                rsi_series = calcular_rsi(hist['Close'])
-                rsi_val = float(rsi_series.iloc[-1]) if not rsi_series.empty else 50.0
-                st.write(f"📈 RSI Atual: {rsi_val:.2f}")
-                st.write(f"🧠 Sentimento IA: {score_p} Positivos | {score_n} Negativos")
-
-            with st.expander("📌 Ver Manchetes Analisadas (Links Oficiais)"):
-                for n in noticias:
-                    st.markdown(f"• {n['t']} [[Link]({n['l']})]")
+                    st.markdown(f"• {entry.title.split(' - ')[0]} [[Link]({entry.link})]")
 
 if vencedoras_count == 0:
-    st.info("💡 Nenhuma ação atende aos filtros atuais na lista expandida.")
+    st.info("💡 Nenhuma ação encontrada para os filtros atuais.")
