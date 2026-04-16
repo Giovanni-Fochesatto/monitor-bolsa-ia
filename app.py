@@ -37,33 +37,43 @@ def calcular_rsi(data, window=14):
     rsi = 100 - (100 / (1 + rs))
     return float(rsi.iloc[-1])
 
-# [ATUALIZADO] Simulação de Assertividade de Compra e Venda
+# [MELHORADO] Simulação de Assertividade 5 Anos com Filtros de Tendência
 def simular_performance_historica(hist):
-    """Analisa sinais de RSI baixo (compra) e alto (venda) nos últimos 12 meses"""
-    if len(hist) < 40: return 0, 0, 0
+    """Analisa RSI + Média Móvel 200 (Tendência) + MACD nos últimos 5 anos"""
+    if len(hist) < 250: return 0, 0, 0
     
     precos = hist['Close']
+    # Critérios Extras: Média 200 para tendência de longo prazo e MACD
+    sma200 = precos.rolling(window=200).mean()
+    exp12 = precos.ewm(span=12, adjust=False).mean()
+    exp26 = precos.ewm(span=26, adjust=False).mean()
+    macd = exp12 - exp26
+    sinal_macd = macd.ewm(span=9, adjust=False).mean()
+
     acertos_c, total_c = 0, 0
     acertos_v, total_v = 0, 0
     retornos = []
     
-    for i in range(20, len(precos) - 15):
-        window = precos.iloc[i-14:i]
-        rsi_passado = calcular_rsi(window)
-        preco_entrada = precos.iloc[i]
-        preco_saida = precos.iloc[i + 15]
-        retorno = (preco_saida / preco_entrada) - 1
+    # Varredura de 5 anos (ou máximo disponível)
+    for i in range(200, len(precos) - 15):
+        window_rsi = precos.iloc[i-14:i]
+        rsi_p = calcular_rsi(window_rsi)
+        p_entrada = precos.iloc[i]
+        p_saida = precos.iloc[i + 15]
+        m200 = sma200.iloc[i]
         
-        # Sinal de Compra (RSI < 35)
-        if rsi_passado < 35:
+        retorno = (p_saida / p_entrada) - 1
+        
+        # Filtro de Compra Profissional: RSI < 35 E Preço > Média 200 (Pullback na tendência de alta)
+        if rsi_p < 35 and p_entrada > m200 and macd.iloc[i] > sinal_macd.iloc[i]:
             total_c += 1
             retornos.append(retorno)
             if retorno > 0: acertos_c += 1
                 
-        # Sinal de Venda (RSI > 70)
-        elif rsi_passado > 70:
+        # Filtro de Venda Profissional: RSI > 70 E Preço < Média 200 (Exaustão na tendência de baixa)
+        elif rsi_p > 70 and (p_entrada < m200 or macd.iloc[i] < sinal_macd.iloc[i]):
             total_v += 1
-            if retorno < 0: acertos_v += 1 # Acerto se o preço caiu após sinal de venda
+            if retorno < 0: acertos_v += 1 
     
     taxa_compra = (acertos_c / total_c * 100) if total_c > 0 else 0
     taxa_venda = (acertos_v / total_v * 100) if total_v > 0 else 0
@@ -113,7 +123,8 @@ def obter_dados_ticker(ticker, mercado):
         if mercado == "Brasil" and not ticker.endswith(".SA"):
             ticker += ".SA"
         t = yf.Ticker(ticker)
-        hist = t.history(period="1y")
+        # Alterado para 5 anos conforme solicitado
+        hist = t.history(period="5y")
         return t.info, hist
     except:
         return None, None
@@ -148,7 +159,6 @@ if st.sidebar.button("Resetar Filtros"):
     st.session_state.filtros_ativos = False
     st.rerun()
 
-# --- LISTA DE TICKERS EXPANDIDA (MANTIDA INTEGRALMENTE) ---
 if mercado_selecionado == "Brasil":
     lista_base = [
         'PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'SANB11', 'B3SA3',
@@ -193,7 +203,6 @@ for tkr in tickers_para_processar:
             if not (pl <= f_pl and pvp <= f_pvp and dy >= f_dy and div_e <= f_div_ebitda):
                 continue
 
-        # IA de Sentimento
         noticias_texto = ""
         lista_links = []
         try:
@@ -209,10 +218,9 @@ for tkr in tickers_para_processar:
         score_n = sum(noticias_texto.count(w) for w in ["queda", "prejuízo", "venda", "caiu", "risk", "loss", "sell"])
         rsi_val = calcular_rsi(hist['Close'])
 
-        # [ATUALIZADO] Cálculo de Assertividades
+        # Cálculo de Assertividades (Agora baseado em 5 anos e filtros extras)
         taxa_compra, taxa_venda, retorno_medio = simular_performance_historica(hist)
 
-        # Lógica de Veredito Expandida (Inclusão de VENDA)
         motivo_detalhe = ""
         if rsi_val > 70 and score_n > score_p:
             veredito, cor = "VENDA 🚨", "error"
@@ -240,7 +248,7 @@ for tkr in tickers_para_processar:
 
 # --- INTERFACE ---
 if dados_vencedoras:
-    st.subheader("🏆 Ranking de Oportunidades & Assertividade")
+    st.subheader("🏆 Ranking de Oportunidades & Assertividade (Dados 5 Anos)")
     df_resumo = pd.DataFrame(dados_vencedoras)[["Ticker", "Preço", "DY %", "Upside %", "Veredito", "TaxaCompra", "TaxaVenda"]]
     
     st.dataframe(
@@ -249,8 +257,8 @@ if dados_vencedoras:
         hide_index=True,
         column_config={
             "Veredito": st.column_config.TextColumn("Veredito", help="Baseado em RSI + Notícias"),
-            "TaxaCompra": st.column_config.NumberColumn("Assert. Compra (%)", format="%.1f%%"),
-            "TaxaVenda": st.column_config.NumberColumn("Assert. Venda (%)", format="%.1f%%")
+            "TaxaCompra": st.column_config.NumberColumn("Assert. Compra (5y)", format="%.1f%%"),
+            "TaxaVenda": st.column_config.NumberColumn("Assert. Venda (5y)", format="%.1f%%")
         }
     )
 
@@ -259,7 +267,6 @@ if dados_vencedoras:
         col_tit, col_ver, col_acc_c, col_acc_v = st.columns([3, 1, 1, 1])
         col_tit.header(f"🏢 {acao['Empresa']} ({acao['Ticker']})")
         
-        # Exibição das Assertividades em destaque
         col_acc_c.metric("Assertividade Compra", f"{acao['TaxaCompra']:.1f}%")
         col_acc_v.metric("Assertividade Venda", f"{acao['TaxaVenda']:.1f}%")
         
@@ -284,7 +291,7 @@ if dados_vencedoras:
 
         with st.expander(f"📊 Detalhes Técnicos e 📌 Notícias: {acao['Ticker']}"):
             st.write(f"📈 RSI (Força Relativa): {acao['RSI']:.2f}")
-            st.write(f"🎯 Assertividade Histórica: Compra {acao['TaxaCompra']:.1f}% | Venda {acao['TaxaVenda']:.1f}%")
+            st.write(f"🎯 Assertividade 5 Anos (Filtro Tendência): Compra {acao['TaxaCompra']:.1f}% | Venda {acao['TaxaVenda']:.1f}%")
             st.markdown("---")
             st.markdown("**Últimas Manchetes:**")
             for n in acao['Links']: st.markdown(f"• [{n['titulo']}]({n['link']})")
