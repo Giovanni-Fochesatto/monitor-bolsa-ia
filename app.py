@@ -40,7 +40,7 @@ def calcular_rsi(data, window=14):
 # [MELHORADO] Simulação de Assertividade 5 Anos com Filtros de Tendência
 def simular_performance_historica(hist):
     """Analisa RSI + Média Móvel 200 (Tendência) + MACD nos últimos 5 anos"""
-    if len(hist) < 250: return 0, 0, 0
+    if len(hist) < 250: return 0, 0, 0, 0, 0
     
     precos = hist['Close']
     # Critérios Extras: Média 200 para tendência de longo prazo e MACD
@@ -79,7 +79,7 @@ def simular_performance_historica(hist):
     taxa_venda = (acertos_v / total_v * 100) if total_v > 0 else 0
     retorno_medio = (np.mean(retornos) * 100) if retornos else 0
     
-    return taxa_compra, taxa_venda, retorno_medio
+    return taxa_compra, taxa_venda, retorno_medio, total_c, total_v
 
 @st.cache_data(ttl=300)
 def obter_indices():
@@ -218,8 +218,8 @@ for tkr in tickers_para_processar:
         score_n = sum(noticias_texto.count(w) for w in ["queda", "prejuízo", "venda", "caiu", "risk", "loss", "sell"])
         rsi_val = calcular_rsi(hist['Close'])
 
-        # Cálculo de Assertividades (Agora baseado em 5 anos e filtros extras)
-        taxa_compra, taxa_venda, retorno_medio = simular_performance_historica(hist)
+        # Cálculo de Assertividades (Agora baseado em 5 anos e filtros extras) + Novas variáveis de contagem
+        taxa_compra, taxa_venda, retorno_medio, total_c, total_v = simular_performance_historica(hist)
 
         motivo_detalhe = ""
         if rsi_val > 70 and score_n > score_p:
@@ -243,13 +243,14 @@ for tkr in tickers_para_processar:
             "Ticker": tkr, "Empresa": info.get('shortName', tkr), "Preço": p_atual,
             "P/L": pl, "DY %": dy, "Dívida": div_e, "Graham": p_justo, "Upside %": upside,
             "Veredito": veredito, "Cor": cor, "Motivo": motivo_detalhe, "RSI": rsi_val, "Hist": hist, "Links": lista_links,
-            "TaxaCompra": taxa_compra, "TaxaVenda": taxa_venda, "RetornoMedio": retorno_medio
+            "TaxaCompra": taxa_compra, "TaxaVenda": taxa_venda, "RetornoMedio": retorno_medio,
+            "QtdCompra": total_c, "QtdVenda": total_v
         })
 
 # --- INTERFACE ---
 if dados_vencedoras:
     st.subheader("🏆 Ranking de Oportunidades & Assertividade (Dados 5 Anos)")
-    df_resumo = pd.DataFrame(dados_vencedoras)[["Ticker", "Preço", "DY %", "Upside %", "Veredito", "TaxaCompra", "TaxaVenda"]]
+    df_resumo = pd.DataFrame(dados_vencedoras)[["Ticker", "Preço", "DY %", "Upside %", "Veredito", "TaxaCompra", "QtdCompra", "TaxaVenda", "QtdVenda"]]
     
     st.dataframe(
         df_resumo.sort_values(by="Upside %", ascending=False), 
@@ -258,7 +259,9 @@ if dados_vencedoras:
         column_config={
             "Veredito": st.column_config.TextColumn("Veredito", help="Baseado em RSI + Notícias"),
             "TaxaCompra": st.column_config.NumberColumn("Assert. Compra (5y)", format="%.1f%%"),
-            "TaxaVenda": st.column_config.NumberColumn("Assert. Venda (5y)", format="%.1f%%")
+            "QtdCompra": st.column_config.NumberColumn("Qtd Compra", help="Número de vezes que o sinal de compra apareceu"),
+            "TaxaVenda": st.column_config.NumberColumn("Assert. Venda (5y)", format="%.1f%%"),
+            "QtdVenda": st.column_config.NumberColumn("Qtd Venda", help="Número de vezes que o sinal de venda apareceu")
         }
     )
 
@@ -267,8 +270,9 @@ if dados_vencedoras:
         col_tit, col_ver, col_acc_c, col_acc_v = st.columns([3, 1, 1, 1])
         col_tit.header(f"🏢 {acao['Empresa']} ({acao['Ticker']})")
         
-        col_acc_c.metric("Assertividade Compra", f"{acao['TaxaCompra']:.1f}%")
-        col_acc_v.metric("Assertividade Venda", f"{acao['TaxaVenda']:.1f}%")
+        # Exibição da % e Quantidade nas métricas superiores
+        col_acc_c.metric("Assertividade Compra", f"{acao['TaxaCompra']:.1f}%", f"{acao['QtdCompra']} sinais")
+        col_acc_v.metric("Assertividade Venda", f"{acao['TaxaVenda']:.1f}%", f"{acao['QtdVenda']} sinais")
         
         if acao["Cor"] == "success": 
             col_ver.success(f"**{acao['Veredito']}**")
@@ -291,7 +295,8 @@ if dados_vencedoras:
 
         with st.expander(f"📊 Detalhes Técnicos e 📌 Notícias: {acao['Ticker']}"):
             st.write(f"📈 RSI (Força Relativa): {acao['RSI']:.2f}")
-            st.write(f"🎯 Assertividade 5 Anos (Filtro Tendência): Compra {acao['TaxaCompra']:.1f}% | Venda {acao['TaxaVenda']:.1f}%")
+            # Detalhamento com as quantidades incluídas
+            st.write(f"🎯 Histórico 5 Anos: Compra {acao['TaxaCompra']:.1f}% ({acao['QtdCompra']} vezes) | Venda {acao['TaxaVenda']:.1f}% ({acao['QtdVenda']} vezes)")
             st.markdown("---")
             st.markdown("**Últimas Manchetes:**")
             for n in acao['Links']: st.markdown(f"• [{n['titulo']}]({n['link']})")
