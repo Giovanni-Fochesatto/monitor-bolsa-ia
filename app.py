@@ -16,29 +16,48 @@ except LookupError:
     nltk.download('punkt')
 
 st.set_page_config(page_title="IA Investidor Pro", layout="wide")
-
-# Auto-refresh a cada 5 minutos
 st_autorefresh(interval=300 * 1000, key="data_refresh")
 
 st.title("🤖 Monitor IA: Automação B3 Pro")
 st.caption(f"Última atualização: {time.strftime('%H:%M:%S')} (Fuso: Blumenau/SC)")
 
-# --- BARRA LATERAL: FILTROS DE ESTRATÉGIA ---
-st.sidebar.header("🎯 Filtros de Estratégia")
-f_pl = st.sidebar.slider("P/L Máximo", 0.0, 50.0, 15.0, step=0.5)
-f_pvp = st.sidebar.slider("P/VP Máximo", 0.0, 10.0, 2.5, step=0.1)
-f_dy = st.sidebar.slider("DY Mínimo (%)", 0.0, 20.0, 4.0, step=0.5)
-f_roe = st.sidebar.slider("ROE Mínimo (%)", 0.0, 40.0, 10.0, step=1.0)
-f_margem = st.sidebar.slider("Marg. Líquida Mínima (%)", 0.0, 50.0, 5.0, step=1.0)
-f_ev_ebitda = st.sidebar.slider("EV/EBITDA Máximo", 0.0, 30.0, 12.0, step=0.5)
-f_div_ebitda = st.sidebar.slider("Dív.Líq/EBITDA Máximo", 0.0, 10.0, 3.5, step=0.5)
+# --- BARRA LATERAL: FILTROS E LEGENDAS ---
+st.sidebar.header("🎯 Filtros e Definições")
 
-# --- FUNÇÕES DE APOIO ---
+# P/L
+f_pl = st.sidebar.slider("P/L Máximo", 0.0, 50.0, 15.0, step=0.5)
+st.sidebar.caption("💡 P/L: Preço/Lucro. Indica em quantos anos você recuperaria o investimento.")
+
+# P/VP
+f_pvp = st.sidebar.slider("P/VP Máximo", 0.0, 10.0, 2.5, step=0.1)
+st.sidebar.caption("💡 P/VP: Indica se a ação está barata em relação ao patrimônio físico.")
+
+# DY
+f_dy = st.sidebar.slider("DY Mínimo (%)", 0.0, 20.0, 4.0, step=0.5)
+st.sidebar.caption("💡 DY: Rendimento em dividendos pagos nos últimos 12 meses.")
+
+# ROE
+f_roe = st.sidebar.slider("ROE Mínimo (%)", 0.0, 40.0, 10.0, step=1.0)
+st.sidebar.caption("💡 ROE: Eficiência em gerar lucro com o capital dos sócios.")
+
+# Margem Líquida
+f_margem = st.sidebar.slider("Marg. Líquida Mínima (%)", 0.0, 50.0, 5.0, step=1.0)
+st.sidebar.caption("💡 Margem Líq: Porcentagem de lucro real sobre a receita total.")
+
+# EV/EBITDA
+f_ev_ebitda = st.sidebar.slider("EV/EBITDA Máximo", 0.0, 30.0, 12.0, step=0.5)
+st.sidebar.caption("💡 EV/EBITDA: Valor da empresa sobre o lucro operacional.")
+
+# Dívida/EBITDA
+f_div_ebitda = st.sidebar.slider("Dív.Líq/EBITDA Máximo", 0.0, 10.0, 3.5, step=0.5)
+st.sidebar.caption("💡 Dív.Líq/EBITDA: Tempo para pagar a dívida com o lucro operacional.")
+
+st.sidebar.divider()
+st.sidebar.caption("📈 RSI (IFR): Acima de 70 = Caro | Abaixo de 30 = Barato.")
+
+# --- FUNÇÕES TÉCNICAS ---
 def get_random_header():
-    agents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
-    ]
+    agents = ['Mozilla/5.0 (Windows NT 10.0; Win64; x64)','Mozilla/5.0 (X11; Linux x86_64)']
     return random.choice(agents)
 
 def calcular_rsi(data, window=14):
@@ -49,7 +68,7 @@ def calcular_rsi(data, window=14):
     return 100 - (100 / (1 + rs))
 
 # --- BLOCOS DE INTERFACE ---
-def analise_fundamentalista(ticker, info):
+def exibir_indicadores(info):
     st.subheader("📊 Indicadores Fundamentalistas")
     try:
         pl = info.get('trailingPE', 0)
@@ -60,8 +79,8 @@ def analise_fundamentalista(ticker, info):
         ev_ebitda = info.get('enterpriseToEbitda', 0)
         
         div_liq = info.get('totalDebt', 0) - info.get('totalCash', 0)
-        ebitda_v = info.get('ebitda', 0)
-        div_ebitda = div_liq / ebitda_v if ebitda_v and ebitda_v != 0 else 0
+        ebitda_v = info.get('ebitda', 1)
+        div_ebitda = div_liq / ebitda_v if ebitda_v != 0 else 0
 
         c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
         c1.metric("P/L", f"{pl:.2f}" if pl else "---")
@@ -70,26 +89,14 @@ def analise_fundamentalista(ticker, info):
         c4.metric("ROE", f"{roe:.1f}%")
         c5.metric("Marg. Líq.", f"{margem:.1f}%")
         c6.metric("EV/EBITDA", f"{ev_ebitda:.2f}" if ev_ebitda else "---")
-        c7.metric("Dív.Líq/EBITDA", f"{div_ebitda:.2f}" if div_ebitda != 0 else "---")
-
-        with st.expander("🎓 O que significam esses números?"):
-            st.markdown(f"""
-            * **P/L:** Preço sobre Lucro. Tempo de retorno do investimento.
-            * **P/VP:** Valor de mercado sobre valor patrimonial.
-            * **DY:** Rendimento de dividendos nos últimos 12 meses.
-            * **ROE:** Retorno sobre o patrimônio líquido.
-            * **Margem Líquida:** Porcentagem de lucro sobre a receita.
-            * **EV/EBITDA:** Valor da empresa sobre lucro operacional.
-            * **Dívida Líquida / EBITDA:** Mede o nível de endividamento da empresa.
-            * **RSI (IFR):** Indica se a ação está cara (>70) ou barata (<30).
-            """)
+        c7.metric("Dív.Líq/EBITDA", f"{div_ebitda:.2f}" if ebitda_v != 1 else "---")
     except Exception:
-        st.error("Erro ao processar indicadores financeiros.")
+        st.warning("Indicadores financeiros parcialmente indisponíveis.")
 
-def analise_ia(ticker, preco, media, rsi_atual):
+def analise_ia_noticias(ticker, preco, media, rsi_atual):
     st.subheader(f"🕵️‍♂️ Inteligência de Mercado: {ticker}")
     noticias = []
-    texto_analise = ""
+    texto_total = ""
     config = Config()
     config.browser_user_agent = get_random_header()
     
@@ -99,14 +106,13 @@ def analise_ia(ticker, preco, media, rsi_atual):
         for entry in feed.entries[:5]:
             titulo = entry.title.split(' - ')[0]
             noticias.append({"t": titulo, "l": entry.link})
-            texto_analise += f"{titulo}. "
+            texto_total += f"{titulo}. "
     except Exception:
         pass
 
-    # Sentimento simplificado
-    pos = ["alta", "lucro", "compra", "subiu", "dividendo"]
-    neg = ["queda", "prejuízo", "venda", "caiu", "risco"]
-    txt = texto_analise.lower()
+    pos = ["alta", "lucro", "compra", "subiu", "dividendo", "positivo"]
+    neg = ["queda", "prejuízo", "venda", "caiu", "risco", "negativo"]
+    txt = texto_total.lower()
     score_p = sum(txt.count(w) for w in pos)
     score_n = sum(txt.count(w) for w in neg)
 
@@ -117,43 +123,4 @@ def analise_ia(ticker, preco, media, rsi_atual):
         else: st.warning("**VEREDITO: NEUTRO ⚖️**")
 
     with ci:
-        st.write(f"🧠 Sentimento IA: {score_p} Positivos | {score_n} Negativos")
-        st.write(f"📈 RSI Atual: {rsi_atual:.2f}")
-
-    with st.expander("📌 Ver Manchetes Analisadas"):
-        for n in noticias:
-            st.markdown(f"• {n['t']} [[Link]({n['l']})]")
-
-# --- PROCESSAMENTO ---
-tickers = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBAS3.SA', 'ABEV3.SA']
-
-for tkr in tickers:
-    try:
-        obj = yf.Ticker(tkr)
-        hist = obj.history(period="1y")
-        if hist.empty: continue
-        
-        info = obj.info
-        # Lógica de Filtro
-        pl_v = info.get('trailingPE', 0) or 0
-        pvp_v = info.get('priceToBook', 0) or 0
-        dy_v = (info.get('dividendYield', 0) or 0) * 100
-        
-        if pl_v <= f_pl and pvp_v <= f_pvp and dy_v >= f_dy:
-            st.divider()
-            st.header(f"🏢 {info.get('longName', tkr)}")
-            
-            hist['MA200'] = hist['Close'].rolling(window=200).mean()
-            hist['RSI'] = calcular_rsi(hist['Close'])
-            
-            p_atual = float(hist['Close'].iloc[-1])
-            m_200 = hist['MA200'].iloc[-1]
-            m_200 = m_200 if not np.isnan(m_200) else p_atual
-            r_atual = hist['RSI'].iloc[-1]
-            r_atual = float(r_atual) if not np.isnan(r_atual) else 50.0
-
-            st.line_chart(hist[['Close', 'MA200']])
-            analise_fundamentalista(tkr, info)
-            analise_ia(tkr, p_atual, m_200, r_atual)
-    except Exception:
-        continue
+        st.write(f"🧠 Sentimento IA: {score_p} Positivos | {score_n
