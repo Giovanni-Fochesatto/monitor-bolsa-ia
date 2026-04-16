@@ -30,11 +30,11 @@ def calcular_rsi(data, window=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-# --- FUNÇÃO DE ANÁLISE DE NOTÍCIAS (VERSÃO BLINDADA) ---
+# --- FUNÇÃO DE ANÁLISE DE NOTÍCIAS (BLINDADA CONTRA TELA PRETA) ---
 def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
     st.subheader(f"🕵️‍♂️ Inteligência de Mercado: {ticker}")
     
-    # Inicialização preventiva para evitar erro de variável não definida (Tela Preta)
+    # Inicialização obrigatória para evitar erros de renderização
     manchetes_encontradas = []
     texto_total_analise = ""
     detectadas_pos = []
@@ -42,7 +42,6 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
     otimismo = 0
     pessimismo = 0
 
-    # Configuração de Request para evitar bloqueios
     timestamp = int(time.time())
     url_news = f"https://news.google.com/rss/search?q={ticker}+when:2d&hl=pt-BR&gl=BR&ceid=BR:pt&t={timestamp}"
     
@@ -56,26 +55,22 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
         if feed.entries:
             with st.spinner(f'IA analisando notícias de {ticker}...'):
                 for entry in feed.entries[:5]: 
-                    # Salva o título imediatamente
                     titulo = entry.title.split(' - ')[0]
                     manchetes_encontradas.append(titulo)
                     texto_total_analise += f"{titulo}. "
                     
-                    # Tentativa de extração do corpo da notícia
                     try:
-                        time.sleep(1) # Delay humano para não ser bloqueado
+                        time.sleep(1) 
                         article = Article(entry.link, config=user_config)
                         article.download()
                         article.parse()
                         texto_total_analise += article.text[:300] + " "
                     except:
                         continue 
-        else:
-            st.info(f"Sem notícias recentes para {ticker} nas últimas 48h.")
     except Exception as e:
         st.error(f"Erro no radar de notícias: {e}")
 
-    # --- MOTOR DE DECISÃO (LÓGICA DE SENTIMENTO) ---
+    # Motor de Sentimento
     positivas = ["alta", "dividendo", "lucro", "compra", "crescimento", "ebitda", "subiu", "positivo", "recorde", "valorização", "superou", "recompra"]
     negativas = ["queda", "risco", "prejuízo", "venda", "caiu", "dívida", "crise", "negativo", "abaixo", "desvalorização", "corte", "inflação"]
 
@@ -86,7 +81,7 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
     otimismo = sum(texto_limpo.count(p) for p in positivas)
     pessimismo = sum(texto_limpo.count(p) for p in negativas)
 
-    # --- EXIBIÇÃO DO VEREDITO ---
+    # Exibição do Veredito
     status_rsi = "Caro" if rsi_atual > 70 else "Barato" if rsi_atual < 30 else "Neutro"
     
     col_v, col_i = st.columns([1, 2])
@@ -99,18 +94,17 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
             st.warning("**VEREDITO: NEUTRO / OBSERVAR ⚖️**")
 
     with col_i:
-        st.write(f"**Análise Técnica:** {'Acima' if preco > media else 'Abaixo'} da média de 200 dias.")
+        st.write(f"**Técnica:** {'Acima' if preco > media else 'Abaixo'} da média de 200 dias.")
         st.write(f"**Indicador RSI:** {rsi_atual:.2f} ({status_rsi})")
 
-    # --- RELATÓRIO DE DETALHES ---
     with st.expander("🔍 Detalhes da Varredura de IA", expanded=True):
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("### 🟢 Sinais Positivos")
-            st.write(", ".join(detectadas_pos) if detectadas_pos else "Nenhum sinal claro identificado.")
+            st.write(", ".join(detectadas_pos) if detectadas_pos else "Nenhum sinal claro.")
         with c2:
             st.markdown("### 🔴 Sinais de Risco")
-            st.write(", ".join(detectadas_neg) if detectadas_neg else "Nenhum risco imediato detectado.")
+            st.write(", ".join(detectadas_neg) if detectadas_neg else "Nenhum risco detectado.")
         
         st.write("---")
         st.markdown("### 📌 Manchetes Processadas")
@@ -118,14 +112,65 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
             for m in manchetes_encontradas:
                 st.write(f"✅ {m}")
         else:
-            st.error("⚠️ Bloqueio de requisição: O Google News restringiu a captura de manchetes agora.")
+            st.info("Aguardando novas manchetes ou acesso limitado pelo portal.")
 
-# --- BUSCA DE DADOS FINANCEIROS ---
+# --- BUSCA DE DADOS FINANCEIROS (CORREÇÃO DA LINHA 131) ---
 def buscar_dados_completos(ticker):
     try:
         t = yf.Ticker(ticker)
         df = t.history(period="1y")
-        if df.empty: return None, None
         
+        if df.empty: 
+            return None, None
+        
+        # O cálculo deve estar fora de um try vazio ou devidamente fechado
         df['MA200'] = df['Close'].rolling(window=200).mean()
         df['RSI'] = calcular_rsi(df['Close'])
+        
+        try:
+            info = t.info
+            fundamentos = {
+                "dy": info.get('dividendYield', 0) * 100 if info.get('dividendYield') else 0,
+                "pl": info.get('trailingPE', 0) if info.get('trailingPE') else 0,
+                "nome": info.get('longName', ticker),
+                "volume": info.get('averageVolume', 0)
+            }
+        except:
+            fundamentos = {"dy": 0, "pl": 0, "nome": ticker, "volume": 0}
+            
+        return df, fundamentos
+    except Exception as e:
+        st.error(f"Erro crítico no ticker {ticker}: {e}")
+        return None, None
+
+# --- LOOP PRINCIPAL ---
+tickers = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBAS3.SA']
+
+for ticker in tickers:
+    dados, fund = buscar_dados_completos(ticker)
+    
+    if dados is not None:
+        try:
+            preco_atual = float(dados['Close'].iloc[-1])
+            media_val = dados['MA200'].iloc[-1]
+            media_atual = float(media_val) if not np.isnan(media_val) else preco_atual
+            
+            rsi_val = dados['RSI'].iloc[-1]
+            rsi_atual = float(rsi_val) if not np.isnan(rsi_val) else 50
+            
+            st.divider()
+            st.header(f"🏢 {fund['nome']} ({ticker})")
+            
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Preço Atual", f"R${preco_atual:.2f}")
+            m2.metric("Dividend Yield", f"{fund['dy']:.2f}%")
+            m3.metric("P/L", f"{fund['pl']:.2f}")
+            m4.metric("Vol. Médio", f"{fund['volume']:,}")
+
+            st.line_chart(dados[['Close', 'MA200']])
+            analise_minuciosa_ia(ticker, preco_atual, media_atual, rsi_atual)
+            
+        except Exception as e:
+            st.error(f"Erro ao processar dados visuais: {e}")
+
+st.caption("Engenharia de IA 2026 - Blumenau, SC.")
