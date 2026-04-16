@@ -6,7 +6,7 @@ import pandas as pd
 # Configuração da página para visualização mobile
 st.set_page_config(page_title="Monitor IA - Bolsa", layout="centered")
 
-st.title("🤖 Monitor de Tendências B3")
+st.title("🤖 Monitor de Tendências")
 st.write("Análise de médias móveis para suporte à decisão.")
 
 # Lista de ações para monitorar
