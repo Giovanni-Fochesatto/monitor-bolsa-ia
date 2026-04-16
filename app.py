@@ -18,37 +18,31 @@ except LookupError:
 st.set_page_config(page_title="IA Investidor Pro", layout="wide")
 st_autorefresh(interval=300 * 1000, key="data_refresh")
 
-st.title("🤖 Monitor IA: Automação B3 Pro")
+# Título simplificado conforme solicitado
+st.title("🤖 Monitor IA")
 st.caption(f"Última atualização: {time.strftime('%H:%M:%S')} (Fuso: Blumenau/SC)")
 
 # --- BARRA LATERAL: FILTROS E LEGENDAS INTEGRADAS ---
 st.sidebar.header("🎯 Filtros e Definições")
 
-# P/L
 f_pl = st.sidebar.slider("P/L Máximo", 0.0, 50.0, 15.0, step=0.5)
 st.sidebar.info("💡 **P/L:** Indica em quantos anos você recuperaria o investimento através dos lucros.")
 
-# P/VP
 f_pvp = st.sidebar.slider("P/VP Máximo", 0.0, 10.0, 2.5, step=0.1)
 st.sidebar.info("💡 **P/VP:** Indica se a ação está barata em relação ao patrimônio físico.")
 
-# DY
 f_dy = st.sidebar.slider("DY Mínimo (%)", 0.0, 20.0, 4.0, step=0.5)
 st.sidebar.info("💡 **DY:** Rendimento em dividendos pagos nos últimos 12 meses.")
 
-# ROE
 f_roe = st.sidebar.slider("ROE Mínimo (%)", 0.0, 40.0, 10.0, step=1.0)
 st.sidebar.info("💡 **ROE:** Mede a eficiência em gerar lucro com o capital dos sócios.")
 
-# Margem Líquida
 f_margem = st.sidebar.slider("Marg. Líquida Mínima (%)", 0.0, 50.0, 5.0, step=1.0)
 st.sidebar.info("💡 **Margem Líquida:** Porcentagem de lucro real sobre a receita total.")
 
-# EV/EBITDA
 f_ev_ebitda = st.sidebar.slider("EV/EBITDA Máximo", 0.0, 30.0, 12.0, step=0.5)
 st.sidebar.info("💡 **EV/EBITDA:** Valor da empresa sobre o lucro operacional.")
 
-# Dívida Líquida / EBITDA
 f_div_ebitda = st.sidebar.slider("Dív.Líq/EBITDA Máximo", 0.0, 10.0, 3.5, step=0.5)
 st.sidebar.info("💡 **Dív.Líq/EBITDA:** Anos de lucro operacional necessários para quitar a dívida.")
 
@@ -66,7 +60,7 @@ def calcular_rsi(data, window=14):
 def get_random_header():
     agents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
     ]
     return random.choice(agents)
 
@@ -145,7 +139,6 @@ for tkr in tickers:
         obj = yf.Ticker(tkr)
         info = obj.info
         
-        # Filtros
         pl_v = info.get('trailingPE', 0) or 0
         pvp_v = info.get('priceToBook', 0) or 0
         dy_v = (info.get('dividendYield', 0) or 0) * 100
