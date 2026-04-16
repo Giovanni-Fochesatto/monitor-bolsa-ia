@@ -114,12 +114,32 @@ if st.sidebar.button("Resetar Filtros"):
     st.session_state.filtros_ativos = False
     st.rerun()
 
-# --- TICKERS ---
+# --- LISTA DE TICKERS EXPANDIDA ---
 if mercado_selecionado == "Brasil":
-    lista_base = ['PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'ABEV3', 'EGIE3', 'WEGE3', 'TRPL4', 'SANB11', 'SAPR11', 'TAEE11']
+    lista_base = [
+        # Blue Chips e Financeiro
+        'PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'SANB11', 'B3SA3',
+        # Energia e Utilidades
+        'EGIE3', 'TRPL4', 'TAEE11', 'SAPR11', 'CPLE6', 'ELET3', 'CMIG4', 'SBSP3',
+        # Consumo, Varejo e Logística
+        'ABEV3', 'WEGE3', 'RADL3', 'RENT3', 'MGLU3', 'LREN3', 'RAIZ4', 'VBBR3',
+        # Commodities e Indústria
+        'SUZB3', 'KLBN11', 'GOAU4', 'CSNA3', 'PRIO3', 'JBSS3', 'BRFS3', 'GGBR4',
+        # Saúde
+        'HAPV3', 'RDOR3'
+    ]
     moeda_simbolo = "R$"
 else:
-    lista_base = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'NFLX']
+    lista_base = [
+        # Big Techs (Magnificent Seven)
+        'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA',
+        # Entretenimento e Consumo
+        'NFLX', 'DIS', 'KO', 'PEP', 'MCD', 'NKE', 'WMT',
+        # Financeiro e Pagamentos
+        'JPM', 'V', 'MA', 'BAC', 'PYPL',
+        # Saúde e Outros
+        'PFE', 'JNJ', 'PG', 'COST', 'ORCL'
+    ]
     moeda_simbolo = "US$"
 
 # --- CABEÇALHO ---
@@ -164,7 +184,7 @@ for tkr in tickers_para_processar:
         score_n = sum(noticias_texto.count(w) for w in ["queda", "prejuízo", "venda", "caiu", "risk", "loss", "sell"])
         rsi_val = calcular_rsi(hist['Close'])
 
-        # Lógica de Veredito com Motivo [NOVO]
+        # Lógica de Veredito com Motivo
         motivo_cautela = ""
         if score_p > score_n and rsi_val < 70:
             veredito, cor = "COMPRA ✅", "success"
@@ -188,7 +208,6 @@ if dados_vencedoras:
     st.subheader("🏆 Ranking de Oportunidades")
     df_resumo = pd.DataFrame(dados_vencedoras)[["Ticker", "Preço", "DY %", "Graham", "Upside %", "Veredito", "Motivo"]]
     
-    # Configuração de ajuda no Ranking
     st.dataframe(
         df_resumo.sort_values(by="Upside %", ascending=False), 
         use_container_width=True, 
@@ -204,7 +223,6 @@ if dados_vencedoras:
         col_tit, col_ver = st.columns([3, 1])
         col_tit.header(f"🏢 {acao['Empresa']} ({acao['Ticker']})")
         
-        # O parâmetro help cria o tooltip ao passar o mouse
         if acao["Cor"] == "success": 
             col_ver.success(f"**{acao['Veredito']}**")
         elif acao["Cor"] == "error": 
@@ -221,13 +239,13 @@ if dados_vencedoras:
         c3.metric("DY", f"{acao['DY %']:.2f}%")
         c4.metric("Dív.Líq/EBITDA", round(acao['Dívida'], 2))
         
-        # Adicionado tooltip na métrica de Graham
         msg_ajuda = acao["Motivo"] if acao["Motivo"] else "Valor baseado em ativos e lucro (Benjamin Graham)."
         c5.metric("Graham", f"{moeda_simbolo} {acao['Graham']:.2f}", f"{acao['Upside %']:.1f}%", help=msg_ajuda)
 
         with st.expander(f"📊 Detalhes Técnicos e 📌 Notícias: {acao['Ticker']}"):
             st.write(f"📈 RSI (Força Relativa): {acao['RSI']:.2f}")
             st.markdown("---")
+            st.markdown("**Últimas Manchetes:**")
             for n in acao['Links']: st.markdown(f"• [{n['titulo']}]({n['link']})")
 else:
     st.info("💡 Use os filtros ou faça uma busca direta.")
