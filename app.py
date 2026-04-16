@@ -148,7 +148,7 @@ for tkr in tickers_para_processar:
             if not (pl <= f_pl and pvp <= f_pvp and dy >= f_dy and div_e <= f_div_ebitda):
                 continue
 
-        # IA de Sentimento e Links
+        # IA de Sentimento
         noticias_texto = ""
         lista_links = []
         try:
@@ -164,38 +164,38 @@ for tkr in tickers_para_processar:
         score_n = sum(noticias_texto.count(w) for w in ["queda", "prejuízo", "venda", "caiu", "risk", "loss", "sell"])
         rsi_val = calcular_rsi(hist['Close'])
 
-        # Lógica de Veredito com Motivo Dinâmico
-        motivo = ""
+        # Lógica de Veredito com Motivo [NOVO]
+        motivo_cautela = ""
         if score_p > score_n and rsi_val < 70:
             veredito, cor = "COMPRA ✅", "success"
         elif score_n > score_p or rsi_val > 75:
             veredito, cor = "CAUTELA ⚠️", "error"
-            motivos_lista = []
-            if rsi_val > 75: motivos_lista.append(f"RSI elevado ({rsi_val:.1f}): Ativo sobrecomprado.")
-            if score_n > score_p: motivos_lista.append("Sentimento de notícias negativo.")
-            motivo = " | ".join(motivos_lista)
+            lista_motivos = []
+            if rsi_val > 75: lista_motivos.append(f"RSI alto ({rsi_val:.1f}): Ação pode estar sobrecomprada.")
+            if score_n > score_p: lista_motivos.append("Sentimento das notícias está negativo.")
+            motivo_cautela = " | ".join(lista_motivos)
         else:
             veredito, cor = "NEUTRO ⚖️", "warning"
 
         dados_vencedoras.append({
             "Ticker": tkr, "Empresa": info.get('shortName', tkr), "Preço": p_atual,
             "P/L": pl, "DY %": dy, "Dívida": div_e, "Graham": p_justo, "Upside %": upside,
-            "Veredito": veredito, "Cor": cor, "Motivo": motivo, "RSI": rsi_val, "Hist": hist, "Links": lista_links
+            "Veredito": veredito, "Cor": cor, "Motivo": motivo_cautela, "RSI": rsi_val, "Hist": hist, "Links": lista_links
         })
 
 # --- INTERFACE ---
 if dados_vencedoras:
     st.subheader("🏆 Ranking de Oportunidades")
-    df_resumo = pd.DataFrame(dados_vencedoras)[["Ticker", "Preço", "DY %", "Upside %", "Veredito", "Motivo"]]
+    df_resumo = pd.DataFrame(dados_vencedoras)[["Ticker", "Preço", "DY %", "Graham", "Upside %", "Veredito", "Motivo"]]
     
-    # Configuração da coluna de ajuda no DataFrame
+    # Configuração de ajuda no Ranking
     st.dataframe(
         df_resumo.sort_values(by="Upside %", ascending=False), 
         use_container_width=True, 
         hide_index=True,
         column_config={
-            "Veredito": st.column_config.TextColumn("Veredito", help="O motivo da cautela aparece na coluna ao lado."),
-            "Motivo": st.column_config.TextColumn("Por que Cautela?", width="medium")
+            "Veredito": st.column_config.TextColumn("Veredito", help="Passe o mouse na coluna 'Motivo' para detalhes."),
+            "Motivo": st.column_config.TextColumn("Motivo da Cautela", width="medium")
         }
     )
 
@@ -204,12 +204,12 @@ if dados_vencedoras:
         col_tit, col_ver = st.columns([3, 1])
         col_tit.header(f"🏢 {acao['Empresa']} ({acao['Ticker']})")
         
-        # O parâmetro 'help' cria o balão de ajuda ao passar o mouse
+        # O parâmetro help cria o tooltip ao passar o mouse
         if acao["Cor"] == "success": 
             col_ver.success(f"**{acao['Veredito']}**")
         elif acao["Cor"] == "error": 
             col_ver.error(f"**{acao['Veredito']}**", icon="⚠️")
-            if acao["Motivo"]: st.info(f"📌 **Motivo:** {acao['Motivo']}")
+            if acao["Motivo"]: st.info(f"👉 **Atenção:** {acao['Motivo']}")
         else: 
             col_ver.warning(f"**{acao['Veredito']}**")
 
@@ -220,8 +220,10 @@ if dados_vencedoras:
         c2.metric("P/L", round(acao['P/L'], 2))
         c3.metric("DY", f"{acao['DY %']:.2f}%")
         c4.metric("Dív.Líq/EBITDA", round(acao['Dívida'], 2))
-        # Adicionado help na métrica de Graham
-        c5.metric("Graham", f"{moeda_simbolo} {acao['Graham']:.2f}", f"{acao['Upside %']:.1f}%", help=acao["Motivo"] if acao["Motivo"] else "Valor intrínseco")
+        
+        # Adicionado tooltip na métrica de Graham
+        msg_ajuda = acao["Motivo"] if acao["Motivo"] else "Valor baseado em ativos e lucro (Benjamin Graham)."
+        c5.metric("Graham", f"{moeda_simbolo} {acao['Graham']:.2f}", f"{acao['Upside %']:.1f}%", help=msg_ajuda)
 
         with st.expander(f"📊 Detalhes Técnicos e 📌 Notícias: {acao['Ticker']}"):
             st.write(f"📈 RSI (Força Relativa): {acao['RSI']:.2f}")
