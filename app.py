@@ -9,7 +9,7 @@ import random
 from newspaper import Article, Config
 from streamlit_autorefresh import st_autorefresh
 
-# --- CONFIGURAÇÕES E CACHE ---
+# --- CONFIGURAÇÕES INICIAIS ---
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
@@ -17,6 +17,13 @@ except LookupError:
 
 st.set_page_config(page_title="Monitor IA Pro", layout="wide")
 st_autorefresh(interval=300 * 1000, key="data_refresh")
+
+# Inicializar estado do filtro
+if 'filtros_ativos' not in st.session_state:
+    st.session_state.filtros_ativos = False
+
+def ativar_filtros():
+    st.session_state.filtros_ativos = True
 
 # --- FUNÇÕES CORE ---
 def calcular_graham(lpa, vpa):
@@ -47,27 +54,34 @@ def obter_dados_ticker(ticker):
     except:
         return None, None
 
-# --- BARRA LATERAL: FILTROS E LEGENDAS ---
+# --- BARRA LATERAL: FILTROS COM GATILHO ---
 st.sidebar.title("🎯 Estratégia")
-with st.sidebar.expander("📊 Filtros e Definições", expanded=True):
-    f_pl = st.slider("P/L Máximo", 0.0, 50.0, 15.0, step=0.5)
-    st.caption("P/L: Tempo de retorno do investimento via lucros.")
+with st.sidebar.expander("📊 Ajustar Filtros", expanded=True):
+    st.write("Os filtros abaixo estão inativos até você alterá-los.")
     
-    f_pvp = st.slider("P/VP Máximo", 0.0, 10.0, 2.0, step=0.1)
-    st.caption("P/VP: Valor de mercado sobre valor patrimonial.")
+    f_pl = st.slider("P/L Máximo", 0.0, 50.0, 50.0, step=0.5, on_change=ativar_filtros)
+    st.sidebar.caption("P/L: Indica o tempo de retorno em anos.")
     
-    f_dy = st.slider("DY Mínimo (%)", 0.0, 20.0, 5.0, step=0.5)
-    st.caption("DY: Rendimento de dividendos no último ano.")
+    f_pvp = st.slider("P/VP Máximo", 0.0, 10.0, 10.0, step=0.1, on_change=ativar_filtros)
+    st.sidebar.caption("P/VP: Preço sobre Valor Patrimonial.")
+    
+    f_dy = st.slider("DY Mínimo (%)", 0.0, 20.0, 0.0, step=0.5, on_change=ativar_filtros)
+    st.sidebar.caption("DY: Rendimento de dividendos anual.")
 
-    f_ev_ebitda = st.slider("EV/EBITDA Máximo", 0.0, 30.0, 12.0, step=0.5)
-    st.caption("EV/EBITDA: Valor da empresa sobre lucro operacional.") #
+    f_ev_ebitda = st.slider("EV/EBITDA Máximo", 0.0, 30.0, 30.0, step=0.5, on_change=ativar_filtros)
+    st.sidebar.caption("EV/EBITDA: Valor da firma/Lucro Operacional.") #
+
+if st.sidebar.button("Resetar Filtros"):
+    st.session_state.filtros_ativos = False
+    st.rerun()
 
 # --- CABEÇALHO ---
 st.title("🤖 Monitor IA")
-st.caption(f"Última atualização: {time.strftime('%H:%M:%S')} | Local: Blumenau/SC")
+status_filtro = "✅ Filtros Ativos" if st.session_state.filtros_ativos else "⚪ Exibindo Tudo (Filtros Desligados)"
+st.caption(f"{status_filtro} | Atualização: {time.strftime('%H:%M:%S')} | Local: Blumenau/SC")
 
 # --- PROCESSAMENTO ---
-tickers = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBAS3.SA', 'ABEV3.SA', 'SANB11.SA', 'EGIE3.SA']
+tickers = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBAS3.SA', 'ABEV3.SA', 'SANB11.SA', 'EGIE3.SA', 'WEGE3.SA']
 vencedoras = []
 
 for tkr in tickers:
@@ -78,7 +92,13 @@ for tkr in tickers:
         dy = (info.get('dividendYield', 0) or 0) * 100
         ev_ebitda = info.get('enterpriseToEbitda', 0) or 0
         
-        if (pl <= f_pl and pvp <= f_pvp and dy >= f_dy and ev_ebitda <= f_ev_ebitda):
+        # Lógica: Se filtros ativos, aplica regras. Se não, passa tudo.
+        passou_filtro = True
+        if st.session_state.filtros_ativos:
+            if not (pl <= f_pl and pvp <= f_pvp and dy >= f_dy and ev_ebitda <= f_ev_ebitda):
+                passou_filtro = False
+        
+        if passou_filtro:
             p_atual = hist['Close'].iloc[-1]
             lpa = info.get('trailingEps', 0) or 0
             vpa = info.get('bookValue', 0) or 0
@@ -97,61 +117,53 @@ for tkr in tickers:
                 "hist": hist
             })
 
-# --- INTERFACE DE RESULTADOS ---
+# --- INTERFACE ---
 if vencedoras:
-    st.subheader("🏆 Ranking de Oportunidades")
+    st.subheader("🏆 Ranking de Ativos")
     df_rank = pd.DataFrame(vencedoras).drop(columns=['info', 'hist'])
     st.dataframe(df_rank.sort_values(by="Potencial %", ascending=False), use_container_width=True, hide_index=True)
     
     for acao in vencedoras:
         st.divider()
-        st.header(f"🏢 {acao['Empresa']} ({acao['Ticker']})")
+        col_t, col_p = st.columns([3, 1])
+        col_t.header(f"🏢 {acao['Empresa']} ({acao['Ticker']})")
+        col_p.metric("Preço Justo (Graham)", f"R$ {acao['Preço Justo']}", f"{acao['Potencial %']}%")
         
-        # Gráfico MA200
         h = acao['hist']
         h['MA200'] = h['Close'].rolling(window=200).mean()
         st.line_chart(h[['Close', 'MA200']])
 
-        # Indicadores
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("P/L", acao['P/L'])
         c2.metric("DY", f"{acao['DY %']}%")
-        c3.metric("Preço Justo", f"R$ {acao['Preço Justo']}")
-        c4.metric("Potencial", f"{acao['Potencial %']}%")
+        c3.metric("P/VP", round(acao['info'].get('priceToBook', 0), 2))
+        c4.metric("EV/EBITDA", round(acao['info'].get('enterpriseToEbitda', 0), 2))
 
-        # --- SEÇÃO DE NOTÍCIAS E LINKS ---
-        st.subheader("🕵️‍♂️ Inteligência de Mercado e Links")
-        noticias_detalhes = []
-        texto_analise = ""
-        user_config = Config()
-        user_config.browser_user_agent = get_random_header()
-        
+        # IA e Links Oficiais
+        st.subheader("🕵️‍♂️ Inteligência e Notícias")
+        noticias = []
+        texto_noticias = ""
         try:
-            url_news = f"https://news.google.com/rss/search?q={acao['Ticker']}+when:2d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
-            feed = feedparser.parse(url_news)
-            for entry in feed.entries[:5]: 
+            url = f"https://news.google.com/rss/search?q={acao['Ticker']}+when:2d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:5]:
                 titulo = entry.title.split(' - ')[0]
-                noticias_detalhes.append({"titulo": titulo, "link": entry.link})
-                texto_analise += f"{titulo}. "
-        except:
-            pass
+                noticias.append({"t": titulo, "l": entry.link})
+                texto_noticias += f"{titulo}. "
+        except: pass
 
-        # Veredito de Sentimento
-        pos = ["alta", "dividendo", "lucro", "compra", "subiu"]
-        neg = ["queda", "risco", "prejuízo", "venda", "caiu"]
-        txt = texto_analise.lower()
-        score_p = sum(txt.count(p) for p in pos)
-        score_n = sum(txt.count(n) for n in neg)
+        score_p = sum(texto_noticias.lower().count(w) for w in ["alta", "lucro", "compra", "subiu"])
+        score_n = sum(texto_noticias.lower().count(w) for w in ["queda", "prejuízo", "venda", "caiu"])
 
-        col_v, col_n = st.columns([1, 2])
-        with col_v:
-            if score_p > score_n: st.success("**SENTIMENTO: POSITIVO 👍**")
-            elif score_n > score_p: st.error("**SENTIMENTO: CAUTELA ⚠️**")
-            else: st.warning("**SENTIMENTO: NEUTRO ⚖️**")
-
-        with col_n:
-            with st.expander("📌 Ver Manchetes Analisadas (Links Oficiais)"): #
-                for n in noticias_detalhes:
-                    st.markdown(f"• {n['titulo']} [[Link]({n['link']})]")
+        v_col, l_col = st.columns([1, 2])
+        with v_col:
+            if score_p > score_n: st.success("SENTIMENTO: POSITIVO 👍")
+            elif score_n > score_p: st.error("SENTIMENTO: CAUTELA ⚠️")
+            else: st.warning("SENTIMENTO: NEUTRO ⚖️")
+        
+        with l_col:
+            with st.expander("📌 Ver Manchetes e Links Oficiais"):
+                for n in noticias:
+                    st.markdown(f"• {n['t']} [[Link]({n['l']})]")
 else:
-    st.info("💡 Nenhuma ação atende aos filtros. Ajuste os sliders na barra lateral.")
+    st.info("Nenhuma ação encontrada para os critérios atuais.")
