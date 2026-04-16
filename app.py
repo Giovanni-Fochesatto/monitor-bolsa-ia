@@ -37,16 +37,23 @@ def calcular_rsi(data, window=14):
     rsi = 100 - (100 / (1 + rs))
     return float(rsi.iloc[-1])
 
-@st.cache_data(ttl=600)
-def obter_dados_ticker(ticker, mercado):
-    try:
-        if mercado == "Brasil" and not ticker.endswith(".SA"):
-            ticker += ".SA"
-        t = yf.Ticker(ticker)
-        hist = t.history(period="1y")
-        return t.info, hist
-    except:
-        return None, None
+@st.cache_data(ttl=300)
+def obter_indices():
+    """Busca a pontuação dos principais índices globais"""
+    indices = {'Ibovespa': '^BVSP', 'Nasdaq': '^IXIC', 'Dow Jones': '^DJI'}
+    resultados = {}
+    for nome, ticker in indices.items():
+        try:
+            data = yf.Ticker(ticker)
+            dado = data.history(period='2d')
+            if not dado.empty and len(dado) >= 2:
+                atual = dado['Close'].iloc[-1]
+                anterior = dado['Close'].iloc[-2]
+                variacao = ((atual / anterior) - 1) * 100
+                resultados[nome] = (atual, variacao)
+        except:
+            resultados[nome] = (0.0, 0.0)
+    return resultados
 
 @st.cache_data(ttl=300)
 def obter_cambio():
@@ -67,9 +74,28 @@ def obter_cambio():
             resultados[nome] = (0.0, 0.0)
     return resultados
 
+@st.cache_data(ttl=600)
+def obter_dados_ticker(ticker, mercado):
+    try:
+        if mercado == "Brasil" and not ticker.endswith(".SA"):
+            ticker += ".SA"
+        t = yf.Ticker(ticker)
+        hist = t.history(period="1y")
+        return t.info, hist
+    except:
+        return None, None
+
 # --- BARRA LATERAL (SIDEBAR) ---
 st.sidebar.title("🌎 Mercado e Estratégia")
 
+# Nova Seção: Índices Globais
+st.sidebar.subheader("📈 Índices Mundiais")
+indices = obter_indices()
+for nome, (valor, var) in indices.items():
+    st.sidebar.metric(nome, f"{valor:,.0f} pts", f"{var:.2f}%")
+st.sidebar.divider()
+
+# Câmbio
 st.sidebar.subheader("💱 Câmbio em Tempo Real")
 cambio = obter_cambio()
 col_c1, col_c2 = st.sidebar.columns(2)
@@ -125,12 +151,15 @@ for tkr in tickers_para_processar:
             if not (pl <= f_pl and pvp <= f_pvp and dy >= f_dy and div_e <= f_div_ebitda):
                 continue
 
-        # IA de Sentimento
         noticias_texto = ""
+        lista_links = []
         try:
             url = f"https://news.google.com/rss/search?q={tkr}&hl={'pt-BR' if mercado_selecionado == 'Brasil' else 'en-US'}"
             feed = feedparser.parse(url)
-            noticias_texto = " ".join([e.title.lower() for e in feed.entries[:5]])
+            for entry in feed.entries[:5]:
+                titulo = entry.title.lower()
+                noticias_texto += titulo + " "
+                lista_links.append({"titulo": entry.title, "link": entry.link})
         except: pass
 
         score_p = sum(noticias_texto.count(w) for w in ["alta", "lucro", "compra", "subiu", "dividend", "profit", "buy"])
@@ -147,7 +176,7 @@ for tkr in tickers_para_processar:
         dados_vencedoras.append({
             "Ticker": tkr, "Empresa": info.get('shortName', tkr), "Preço": p_atual,
             "P/L": pl, "DY %": dy, "Dívida": div_e, "Graham": p_justo, "Upside %": upside,
-            "Veredito": veredito, "Cor": cor, "RSI": rsi_val, "Hist": hist
+            "Veredito": veredito, "Cor": cor, "RSI": rsi_val, "Hist": hist, "Links": lista_links
         })
 
 # --- INTERFACE ---
@@ -178,6 +207,7 @@ if dados_vencedoras:
 
         st.line_chart(acao['Hist']['Close'])
 
+        # Cards de Métricas
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Preço Atual", f"{moeda_simbolo} {acao['Preço']:.2f}")
         c2.metric("P/L", round(acao['P/L'], 2))
@@ -185,7 +215,12 @@ if dados_vencedoras:
         c4.metric("Dív.Líq/EBITDA", round(acao['Dívida'], 2))
         c5.metric("Preço Justo (Graham)", f"{moeda_simbolo} {acao['Graham']:.2f}", f"{acao['Upside %']:.1f}%")
 
-        with st.expander(f"📊 Detalhes Técnicos: {acao['Ticker']}"):
+        # Notícias
+        with st.expander(f"📊 Detalhes Técnicos e 📌 Notícias: {acao['Ticker']}"):
             st.write(f"📈 RSI (Força Relativa): {acao['RSI']:.2f}")
+            st.markdown("---")
+            st.markdown("**Últimas Manchetes:**")
+            for n in acao['Links']:
+                st.markdown(f"• [{n['titulo']}]({n['link']})")
 else:
     st.info("💡 Use os filtros ou faça uma busca direta.")
