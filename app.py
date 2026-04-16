@@ -44,7 +44,6 @@ def calcular_rsi(data, window=14):
 # --- ANÁLISE FUNDAMENTALISTA (ESTILO INVESTIDOR 10) ---
 def analise_fundamentalista_i10(ticker, info):
     st.subheader(f"📊 Indicadores Fundamentalistas (Estilo Investidor 10)")
-    
     try:
         pl = info.get('trailingPE', 0)
         pvp = info.get('priceToBook', 0)
@@ -63,13 +62,13 @@ def analise_fundamentalista_i10(ticker, info):
 
         with st.expander("🎓 O que significam esses números? (Legenda)"):
             st.markdown("""
-            * **P/L:** Indica em quantos anos você recuperaria seu investimento através do lucro.
-            * **P/VP:** Preço sobre Valor Patrimonial. Abaixo de 1,00 pode indicar desconto.
+            * **P/L:** Preço sobre Lucro. Indica em quantos anos você recuperaria o investimento.
+            * **P/VP:** Preço sobre Valor Patrimonial. Abaixo de 1,00 indica que a ação custa menos que o patrimônio da empresa.
             * **DY (Dividend Yield):** Rendimento em dividendos nos últimos 12 meses.
-            * **ROE:** Eficiência em gerar lucro com o capital próprio. Acima de 15% é excelente.
+            * **ROE:** Retorno sobre Patrimônio. Mede a eficiência em gerar lucro.
             """)
     except Exception as e:
-        st.warning(f"Erro ao carregar fundamentos: {e}")
+        st.warning(f"Indicadores indisponíveis no momento.")
 
 # --- FUNÇÃO DE IA E SENTIMENTO ---
 def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
@@ -95,12 +94,13 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
                     article.download()
                     article.parse()
                     texto_total_analise += article.text[:300] + " "
-                except: continue
+                except:
+                    continue
     except Exception as e:
-        st.error(f"Erro no radar de notícias: {e}")
+        st.error(f"Erro ao buscar notícias.")
 
     # Motor de Sentimento
-    positivas = ["alta", "dividendo", "lucro", "compra", "subiu", "recorde"]
+    positivas = ["alta", "dividendo", "lucro", "compra", "subiu", "positivo"]
     negativas = ["queda", "risco", "prejuízo", "venda", "caiu", "dívida"]
     
     texto_limpo = texto_total_analise.lower()
@@ -112,25 +112,26 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
         if preco > media and otimismo > pessimismo:
             st.success("**VEREDITO: COMPRA ✅**")
         elif preco < media and pessimismo > otimismo:
-            st.error("**VEREDITO: EVITAR ❌**")
+            st.error("**VEREDITO: EVITAR/VENDA ❌**")
         else:
-            st.warning("**VEREDITO: NEUTRO ⚖️**")
+            st.warning("**VEREDITO: NEUTRO / OBSERVAR ⚖️**")
 
     with col_i:
-        st.write(f"Técnica: {'Acima' if preco > media else 'Abaixo'} da MA200 | RSI: {rsi_atual:.1f}")
+        st.write(f"Técnica: {'Acima' if preco > media else 'Abaixo'} da média 200.")
+        st.write(f"RSI: {rsi_atual:.2f}")
 
 # --- BUSCA DE DADOS ---
 def buscar_dados(ticker):
     try:
         t = yf.Ticker(ticker)
         df = t.history(period="1y")
-        if df.empty: return None, None
+        if df.empty:
+            return None, None
         
         df['MA200'] = df['Close'].rolling(window=200).mean()
         df['RSI'] = calcular_rsi(df['Close'])
         return df, t.info
     except Exception as e:
-        st.error(f"Erro ao buscar {ticker}: {e}")
         return None, None
 
 # --- LOOP PRINCIPAL ---
@@ -142,4 +143,14 @@ for ticker in tickers:
         st.divider()
         st.header(f"🏢 {info.get('longName', ticker)}")
         
-        preco_
+        # Garante que as variáveis existam antes de usar (Evita erro da linha 145)
+        preco_atual = float(dados['Close'].iloc[-1])
+        media_val = dados['MA200'].iloc[-1]
+        media_atual = float(media_val) if not np.isnan(media_val) else preco_atual
+        rsi_atual = float(dados['RSI'].iloc[-1]) if not np.isnan(dados['RSI'].iloc[-1]) else 50
+        
+        st.line_chart(dados[['Close', 'MA200']])
+        analise_fundamentalista_i10(ticker, info)
+        analise_minuciosa_ia(ticker, preco_atual, media_atual, rsi_atual)
+
+st.caption("Engenharia de IA 2026 - Blumenau, SC.")
