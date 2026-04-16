@@ -5,112 +5,105 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 import time
-import feedparser # Biblioteca excelente para ler notícias sem ser bloqueado
+import feedparser
 
 # 1. Configuração da Página
 st.set_page_config(page_title="IA Investidor Pro", layout="centered")
 
 st.title("🤖 Monitor IA: Análise Técnica + Fundamentalista")
-st.caption("Cruzamento de Médias Móveis com Varredura de Notícias via Google News RSS")
+st.caption("Dados em tempo real: B3, Google News e Indicadores de Valor")
 
-# --- FUNÇÃO DE ANÁLISE MINUCIOSA (VERSÃO BLINDADA) ---
+# --- FUNÇÃO DE ANÁLISE MINUCIOSA (COM O SEU CÓDIGO INTEGRADO) ---
 def analise_minuciosa_ia(ticker, preco, media):
     st.subheader(f"🕵️‍♂️ Análise Profunda IA: {ticker}")
     
-    # Usamos o RSS do Google News para evitar bloqueios de "bot"
-    # Ele busca notícias específicas do ticker nas últimas 48h
     url_news = f"https://news.google.com/rss/search?q={ticker}+stock+analysis+quando:2d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+    resumo_noticias = ""
     
-    links = []
     try:
         feed = feedparser.parse(url_news)
-        # Pegamos os 3 links de notícias mais relevantes do feed
-        for entry in feed.entries[:3]:
-            links.append(entry.link)
+        with st.spinner(f'IA vasculhando portais financeiros para {ticker}...'):
+            # SEU CÓDIGO INTEGRADO AQUI:
+            for entry in feed.entries[:3]: 
+                try:
+                    # Plano A: Resumo do Google
+                    resumo_noticias += entry.summary + " "
+                    
+                    # Plano B: Detalhes do site
+                    headers = {'User-Agent': 'Mozilla/5.0'}
+                    response = requests.get(entry.link, timeout=5, headers=headers)
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, 'html.parser')
+                        paragrafos = soup.find_all('p')
+                        texto_extra = " ".join([p.get_text() for p in paragrafos[:2]])
+                        resumo_noticias += texto_extra + " "
+                except:
+                    continue
     except Exception as e:
-        st.warning("IA em modo offline: Falha ao acessar feed de notícias.")
-        return
-
-    resumo_noticias = ""
-    # Barra de progresso charmosa enquanto a IA "lê" os sites
-    with st.spinner(f'IA vasculhando portais financeiros para {ticker}...'):
-        for link in links:
-            try:
-                # Simulamos um navegador real para o site não barrar a leitura do texto
-                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-                response = requests.get(link, timeout=7, headers=headers)
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Extraímos o texto dos parágrafos
-                paragrafos = soup.find_all('p')
-                texto = " ".join([p.get_text() for p in paragrafos[:4]])
-                resumo_noticias += texto + " "
-                time.sleep(1) # Intervalo ético entre leituras
-            except:
-                continue
+        st.warning("Falha ao acessar feed de notícias.")
 
     st.write("---")
     
-    # 2. MOTOR DE DECISÃO (Lógica Fundamentalista)
-    # Procuramos termos que indicam saúde financeira ou risco
-    palavras_positivas = ["alta", "dividendo", "lucro", "compra", "crescimento", "ebitda", "recorde"]
-    palavras_negativas = ["queda", "risco", "prejuízo", "venda", "crise", "dívida", "processo"]
+    # Motor de Decisão (Aprimorado)
+    palavras_positivas = ["alta", "dividendo", "lucro", "compra", "crescimento", "ebitda", "subiu"]
+    palavras_negativas = ["queda", "risco", "prejuízo", "venda", "caiu", "dívida", "crise"]
 
     otimismo = sum(resumo_noticias.lower().count(p) for p in palavras_positivas)
     pessimismo = sum(resumo_noticias.lower().count(p) for p in palavras_negativas)
 
-    # Exibição do Veredito
     if preco > media and otimismo > pessimismo:
-        st.success(f"**VEREDITO: COMPRA MINUCIOSA ✅**")
-        st.write(f"**Motivo:** O preço está acima da média móvel (tendência de alta) e a mídia financeira cita termos como {', '.join(palavras_positivas[:3])}.")
+        st.success("**VEREDITO: COMPRA ✅**")
+        st.write("Cenário de alta técnica confirmado por otimismo nas notícias.")
     elif preco < media and pessimismo > otimismo:
-        st.error(f"**VEREDITO: VENDA / EVITAR ❌**")
-        st.write(f"**Motivo:** Tendência técnica de baixa confirmada por notícias sobre {', '.join(palavras_negativas[:3])}.")
+        st.error("**VEREDITO: EVITAR ❌**")
+        st.write("Tendência de baixa com suporte de notícias negativas.")
     else:
-        st.warning(f"**VEREDITO: NEUTRO / OBSERVAR ⚖️**")
-        st.write("Sinais mistos. O gráfico e o sentimento das notícias não estão em sintonia clara.")
+        st.warning("**VEREDITO: NEUTRO / OBSERVAR ⚖️**")
+        st.write("Falta de consenso entre gráfico e notícias.")
 
-    with st.expander("🔍 Ver o que a IA extraiu para análise"):
-        if resumo_noticias:
-            st.write(resumo_noticias[:1200] + "...")
-        else:
-            st.write("Não foi possível extrair texto detalhado, mas a análise de títulos foi concluída.")
+    with st.expander("🔍 Detalhes da Varredura"):
+        st.write(resumo_noticias if resumo_noticias else "Nenhum texto adicional encontrado.")
 
-# --- FUNÇÃO DE BUSCA DE PREÇOS ---
-def buscar_dados(ticker):
-    # Tentativa de busca com Ticker obj (mais estável no Streamlit)
+# --- FUNÇÃO DE BUSCA DE DADOS E FUNDAMENTOS ---
+def buscar_dados_completos(ticker):
     t = yf.Ticker(ticker)
-    df = t.history(start='2024-01-01')
-    if df.empty:
-        df = yf.download(ticker, start='2024-01-01', progress=False)
-    
+    df = t.history(period="1y") # 1 ano de dados
     df['MA200'] = df['Close'].rolling(window=200).mean()
-    return df
+    
+    # Pegando indicadores reais de mercado
+    info = t.info
+    fundamentos = {
+        "dy": info.get('dividendYield', 0) * 100,
+        "pl": info.get('trailingPE', 0),
+        "nome": info.get('longName', ticker)
+    }
+    return df, fundamentos
 
 # --- INTERFACE PRINCIPAL ---
 tickers = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA']
 
 for ticker in tickers:
     try:
-        dados = buscar_dados(ticker)
-        # Pegamos o valor da última linha
+        dados, fund = buscar_dados_completos(ticker)
         preco_atual = float(dados['Close'].iloc[-1])
         media_atual = float(dados['MA200'].iloc[-1])
         
-        # UI: Cabeçalho e Gráfico
-        st.header(f"📉 {ticker}")
-        fig, ax = plt.subplots(figsize=(10, 4))
-        ax.plot(dados.index, dados['Close'], label='Preço Fechamento', color='#1f77b4')
-        ax.plot(dados.index, dados['MA200'], label='Média 200d', color='#ff7f0e', linestyle='--')
-        ax.set_ylabel("Preço (R$)")
-        ax.legend()
-        st.pyplot(fig)
+        st.header(f"🏢 {fund['nome']}")
         
-        # Executa a análise minuciosa
+        # Exibindo Indicadores Reais (Dashboard)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Preço", f"R${preco_atual:.2f}")
+        c2.metric("Div. Yield", f"{fund['dy']:.2f}%")
+        c3.metric("P/L", f"{fund['pl']:.2f}")
+
+        # Gráfico
+        st.line_chart(dados[['Close', 'MA200']])
+        
+        # Análise de IA
         analise_minuciosa_ia(ticker, preco_atual, media_atual)
         st.divider()
         
     except Exception as e:
-        st.error(f"Erro ao processar {ticker}: {e}")
+        st.error(f"Erro em {ticker}: {e}")
 
-st.caption("Fonte: Yahoo Finance & Google News. Análise gerada via Algoritmo de IA.")
+st.caption("Desenvolvido para estudos de Engenharia de IA - Blumenau, SC.")
