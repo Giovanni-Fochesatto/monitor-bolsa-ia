@@ -52,7 +52,7 @@ def obter_dados_ticker(ticker, mercado):
 
 @st.cache_data(ttl=300)
 def obter_cambio():
-    """Busca cotações das moedas em tempo real"""
+    """Busca cotações das moedas em tempo real com correção para Bitcoin"""
     moedas = {'Dólar': 'USDBRL=X', 'Euro': 'EURBRL=X', 'Bitcoin': 'BTC-BRL'}
     resultados = {}
     for nome, ticker in moedas.items():
@@ -73,7 +73,7 @@ def obter_cambio():
 # --- BARRA LATERAL (SIDEBAR) ---
 st.sidebar.title("🌎 Mercado e Estratégia")
 
-# Câmbio
+# Seção de Câmbio [Recuperada]
 st.sidebar.subheader("💱 Câmbio em Tempo Real")
 cambio = obter_cambio()
 col_c1, col_c2 = st.sidebar.columns(2)
@@ -86,4 +86,37 @@ mercado_selecionado = st.sidebar.radio("Escolha o Mercado:", ["Brasil", "EUA"], 
 busca_direta = st.sidebar.text_input(f"🔍 Busca Rápida ({mercado_selecionado}):").upper()
 
 with st.sidebar.expander("📊 Filtros de Valuation", expanded=True):
-    f_pl = st.slider("P/L Máximo", 0.0, 5
+    f_pl = st.slider("P/L Máximo", 0.0, 50.0, 50.0, step=0.5, on_change=ativar_filtros)
+    f_pvp = st.slider("P/VP Máximo", 0.0, 10.0, 10.0, step=0.1, on_change=ativar_filtros)
+    f_dy = st.slider("DY Mínimo (%)", 0.0, 20.0, 0.0, step=0.5, on_change=ativar_filtros)
+    f_div_ebitda = st.slider("Dív.Líq/EBITDA Máximo", 0.0, 15.0, 15.0, step=0.5, on_change=ativar_filtros)
+
+if st.sidebar.button("Resetar Filtros"):
+    st.session_state.filtros_ativos = False
+    st.rerun()
+
+# --- CONFIGURAÇÃO DE TICKERS ---
+if mercado_selecionado == "Brasil":
+    lista_base = ['PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'ABEV3', 'EGIE3', 'WEGE3', 'TRPL4']
+    moeda_simbolo = "R$"
+else:
+    lista_base = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'NFLX', 'KO', 'DIS']
+    moeda_simbolo = "US$"
+
+# --- CABEÇALHO ---
+st.title(f"🤖 Monitor IA - {mercado_selecionado}")
+st.caption(f"Atualização: {time.strftime('%H:%M:%S')} | Local: Blumenau/SC")
+
+# --- PROCESSAMENTO ---
+tickers_para_processar = [busca_direta] if busca_direta else lista_base
+dados_vencedoras = []
+
+for tkr in tickers_para_processar:
+    info, hist = obter_dados_ticker(tkr, mercado_selecionado)
+    if info and not hist.empty:
+        pl = info.get('trailingPE', 0) or 0
+        pvp = info.get('priceToBook', 0) or 0
+        dy = (info.get('dividendYield', 0) or 0) * 100
+        ebitda = info.get('ebitda', 1) or 1
+        div_e = (info.get('totalDebt', 0) - info.get('totalCash', 0)) / ebitda
+        lpa = info.get('trailingEps', 0) or 0
