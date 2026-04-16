@@ -21,45 +21,41 @@ st_autorefresh(interval=300 * 1000, key="data_refresh")
 st.title("🤖 Monitor IA: Automação B3 Pro")
 st.caption(f"Última atualização: {time.strftime('%H:%M:%S')} (Fuso: Blumenau/SC)")
 
-# --- BARRA LATERAL: FILTROS E LEGENDAS ---
+# --- BARRA LATERAL: FILTROS E LEGENDAS INTEGRADAS ---
 st.sidebar.header("🎯 Filtros e Definições")
 
 # P/L
 f_pl = st.sidebar.slider("P/L Máximo", 0.0, 50.0, 15.0, step=0.5)
-st.sidebar.caption("💡 P/L: Preço/Lucro. Indica em quantos anos você recuperaria o investimento.")
+st.sidebar.info("💡 **P/L:** Indica em quantos anos você recuperaria o investimento através dos lucros.")
 
 # P/VP
 f_pvp = st.sidebar.slider("P/VP Máximo", 0.0, 10.0, 2.5, step=0.1)
-st.sidebar.caption("💡 P/VP: Indica se a ação está barata em relação ao patrimônio físico.")
+st.sidebar.info("💡 **P/VP:** Indica se a ação está barata em relação ao patrimônio físico.")
 
 # DY
 f_dy = st.sidebar.slider("DY Mínimo (%)", 0.0, 20.0, 4.0, step=0.5)
-st.sidebar.caption("💡 DY: Rendimento em dividendos pagos nos últimos 12 meses.")
+st.sidebar.info("💡 **DY:** Rendimento em dividendos pagos nos últimos 12 meses.")
 
 # ROE
 f_roe = st.sidebar.slider("ROE Mínimo (%)", 0.0, 40.0, 10.0, step=1.0)
-st.sidebar.caption("💡 ROE: Eficiência em gerar lucro com o capital dos sócios.")
+st.sidebar.info("💡 **ROE:** Mede a eficiência em gerar lucro com o capital dos sócios.")
 
 # Margem Líquida
 f_margem = st.sidebar.slider("Marg. Líquida Mínima (%)", 0.0, 50.0, 5.0, step=1.0)
-st.sidebar.caption("💡 Margem Líq: Porcentagem de lucro real sobre a receita total.")
+st.sidebar.info("💡 **Margem Líquida:** Porcentagem de lucro real sobre a receita total.")
 
 # EV/EBITDA
 f_ev_ebitda = st.sidebar.slider("EV/EBITDA Máximo", 0.0, 30.0, 12.0, step=0.5)
-st.sidebar.caption("💡 EV/EBITDA: Valor da empresa sobre o lucro operacional.")
+st.sidebar.info("💡 **EV/EBITDA:** Valor da empresa sobre o lucro operacional.")
 
-# Dívida/EBITDA
+# Dívida Líquida / EBITDA
 f_div_ebitda = st.sidebar.slider("Dív.Líq/EBITDA Máximo", 0.0, 10.0, 3.5, step=0.5)
-st.sidebar.caption("💡 Dív.Líq/EBITDA: Tempo para pagar a dívida com o lucro operacional.")
+st.sidebar.info("💡 **Dív.Líq/EBITDA:** Anos de lucro operacional necessários para quitar a dívida.")
 
 st.sidebar.divider()
-st.sidebar.caption("📈 RSI (IFR): Acima de 70 = Caro | Abaixo de 30 = Barato.")
+st.sidebar.write("📈 **RSI (IFR):** Acima de 70 (Caro) | Abaixo de 30 (Barato).")
 
 # --- FUNÇÕES TÉCNICAS ---
-def get_random_header():
-    agents = ['Mozilla/5.0 (Windows NT 10.0; Win64; x64)','Mozilla/5.0 (X11; Linux x86_64)']
-    return random.choice(agents)
-
 def calcular_rsi(data, window=14):
     delta = data.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
@@ -67,8 +63,15 @@ def calcular_rsi(data, window=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-# --- BLOCOS DE INTERFACE ---
-def exibir_indicadores(info):
+def get_random_header():
+    agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+    ]
+    return random.choice(agents)
+
+# --- BLOCOS DE EXIBIÇÃO ---
+def analise_fundamentalista(info):
     st.subheader("📊 Indicadores Fundamentalistas")
     try:
         pl = info.get('trailingPE', 0)
@@ -91,9 +94,9 @@ def exibir_indicadores(info):
         c6.metric("EV/EBITDA", f"{ev_ebitda:.2f}" if ev_ebitda else "---")
         c7.metric("Dív.Líq/EBITDA", f"{div_ebitda:.2f}" if ebitda_v != 1 else "---")
     except Exception:
-        st.warning("Indicadores financeiros parcialmente indisponíveis.")
+        st.warning("Erro ao processar dados fundamentalistas.")
 
-def analise_ia_noticias(ticker, preco, media, rsi_atual):
+def analise_ia(ticker, preco, media, rsi_atual):
     st.subheader(f"🕵️‍♂️ Inteligência de Mercado: {ticker}")
     noticias = []
     texto_total = ""
@@ -118,9 +121,67 @@ def analise_ia_noticias(ticker, preco, media, rsi_atual):
 
     cv, ci = st.columns([1, 2])
     with cv:
-        if preco > media and score_p > score_n: st.success("**VEREDITO: COMPRA ✅**")
-        elif preco < media and score_n > score_p: st.error("**VEREDITO: EVITAR ❌**")
-        else: st.warning("**VEREDITO: NEUTRO ⚖️**")
+        if preco > media and score_p > score_n:
+            st.success("**VEREDITO: COMPRA ✅**")
+        elif preco < media and score_n > score_p:
+            st.error("**VEREDITO: EVITAR ❌**")
+        else:
+            st.warning("**VEREDITO: NEUTRO ⚖️**")
 
     with ci:
-        st.write(f"🧠 Sentimento IA: {score_p} Positivos | {score_n
+        st.write(f"🧠 Sentimento IA: {score_p} Positivos | {score_n} Negativos")
+        st.write(f"📈 RSI Atual: {rsi_atual:.2f}")
+
+    with st.expander("📌 Ver Manchetes Analisadas"):
+        for n in noticias:
+            st.markdown(f"• {n['t']} [[Link]({n['l']})]")
+
+# --- PROCESSAMENTO PRINCIPAL ---
+tickers = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBAS3.SA', 'ABEV3.SA', 'SANB11.SA']
+encontrou_ativos = False
+
+for tkr in tickers:
+    try:
+        obj = yf.Ticker(tkr)
+        info = obj.info
+        
+        # Filtros
+        pl_v = info.get('trailingPE', 0) or 0
+        pvp_v = info.get('priceToBook', 0) or 0
+        dy_v = (info.get('dividendYield', 0) or 0) * 100
+        roe_v = (info.get('returnOnEquity', 0) or 0) * 100
+        marg_v = (info.get('profitMargins', 0) or 0) * 100
+        ev_v = info.get('enterpriseToEbitda', 0) or 0
+        
+        div_liq = info.get('totalDebt', 0) - info.get('totalCash', 0)
+        ebitda_v = info.get('ebitda', 1)
+        div_e_v = div_liq / ebitda_v
+
+        if (pl_v <= f_pl and pvp_v <= f_pvp and dy_v >= f_dy and 
+            roe_v >= f_roe and marg_v >= f_margem and 
+            ev_v <= f_ev_ebitda and div_e_v <= f_div_ebitda):
+            
+            hist = obj.history(period="1y")
+            if not hist.empty:
+                encontrou_ativos = True
+                st.divider()
+                st.header(f"🏢 {info.get('longName', tkr)}")
+                
+                hist['MA200'] = hist['Close'].rolling(window=200).mean()
+                hist['RSI'] = calcular_rsi(hist['Close'])
+                
+                p_atual = float(hist['Close'].iloc[-1])
+                m_200 = hist['MA200'].iloc[-1]
+                m_200 = m_200 if not np.isnan(m_200) else p_atual
+                r_atual = float(hist['RSI'].iloc[-1]) if not np.isnan(hist['RSI'].iloc[-1]) else 50.0
+
+                st.line_chart(hist[['Close', 'MA200']])
+                analise_fundamentalista(info)
+                analise_ia(tkr, p_atual, m_200, r_atual)
+    except Exception:
+        continue
+
+if not encontrou_ativos:
+    st.info("💡 Nenhuma ação atende aos filtros selecionados. Tente ajustar os critérios na barra lateral.")
+
+st.caption("Engenharia de IA 2026 - Sistema de Análise Filtrada Pro.")
