@@ -167,7 +167,6 @@ col_c3.metric("Libra", f"R$ {cambio['Libra'][0]:.2f}", f"{cambio['Libra'][1]:.2f
 col_c4.metric("Bitcoin", f"R$ {cambio['Bitcoin'][0]:.0f}", f"{cambio['Bitcoin'][1]:.2f}%")
 st.sidebar.divider()
 
-mercado_selecionado = st.sidebar.radio("Escolha o Mercado:", ["Brasil", "EUA"], on_change=ativar_filtros)
 estrategia_ativa = st.sidebar.selectbox("Foco da Análise:", ["Análise Técnica + Notícias", "Value Investing (Graham/Buffett)"])
 busca_direta = st.sidebar.text_input(f"🔍 Busca Rápida ({mercado_selecionado}):").upper()
 
@@ -190,14 +189,7 @@ if mercado_selecionado == "Brasil":
         'HAPV3', 'RDOR3'
     ]
     moeda_simbolo = "R$"
-else:
-    lista_base = [
-        'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA',
-        'NFLX', 'DIS', 'KO', 'PEP', 'MCD', 'NKE', 'WMT',
-        'JPM', 'V', 'MA', 'BAC', 'PYPL',
-        'PFE', 'JNJ', 'PG', 'COST', 'ORCL'
-    ]
-    moeda_simbolo = "US$"
+
 
 # --- CABEÇALHO ---
 st.title(f"🤖 Monitor IA - {mercado_selecionado}")
