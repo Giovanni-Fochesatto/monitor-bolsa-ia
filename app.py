@@ -23,7 +23,19 @@ st_autorefresh(interval=300 * 1000, key="data_refresh")
 st.title("🤖 Monitor IA: Automação B3 Pro")
 st.caption(f"Última atualização: {time.strftime('%H:%M:%S')} (Fuso: Blumenau/SC)")
 
-# --- SISTEMA DE PRIVACIDADE (HEADER ROTATION) ---
+# --- BARRA LATERAL: FILTROS DE ESTRATÉGIA ---
+st.sidebar.header("🎯 Filtros de Estratégia")
+st.sidebar.write("Defina os limites máximos ou mínimos para exibir as ações:")
+
+f_pl = st.sidebar.slider("P/L Máximo", 0.0, 50.0, 15.0, step=0.5)
+f_pvp = st.sidebar.slider("P/VP Máximo", 0.0, 10.0, 2.5, step=0.1)
+f_dy = st.sidebar.slider("DY Mínimo (%)", 0.0, 20.0, 4.0, step=0.5)
+f_roe = st.sidebar.slider("ROE Mínimo (%)", 0.0, 40.0, 10.0, step=1.0)
+f_margem = st.sidebar.slider("Marg. Líquida Mínima (%)", 0.0, 50.0, 5.0, step=1.0)
+f_ev_ebitda = st.sidebar.slider("EV/EBITDA Máximo", 0.0, 30.0, 12.0, step=0.5)
+f_div_ebitda = st.sidebar.slider("Dív.Líq/EBITDA Máximo", 0.0, 10.0, 3.5, step=0.5)
+
+# --- SISTEMA DE PRIVACIDADE ---
 def get_random_header():
     agents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
@@ -33,7 +45,6 @@ def get_random_header():
     ]
     return random.choice(agents)
 
-# --- FUNÇÕES TÉCNICAS ---
 def calcular_rsi(data, window=14):
     delta = data.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
@@ -41,7 +52,7 @@ def calcular_rsi(data, window=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-# --- ANÁLISE FUNDAMENTALISTA (ESTILO INVESTIDOR 10) ---
+# --- ANÁLISE FUNDAMENTALISTA COM LEGENDA AMPLIADA ---
 def analise_fundamentalista_i10(ticker, info):
     st.subheader(f"📊 Indicadores Fundamentalistas (Estilo Investidor 10)")
     try:
@@ -51,7 +62,6 @@ def analise_fundamentalista_i10(ticker, info):
         dy = info.get('dividendYield', 0) * 100
         margem = info.get('profitMargins', 0) * 100
         ev_ebitda = info.get('enterpriseToEbitda', 0)
-        
         divida_liquida = info.get('totalDebt', 0) - info.get('totalCash', 0)
         ebitda_valor = info.get('ebitda', 0)
         div_ebitda = divida_liquida / ebitda_valor if ebitda_valor and ebitda_valor != 0 else 0
@@ -71,50 +81,43 @@ def analise_fundamentalista_i10(ticker, info):
             * **P/VP:** Preço sobre Valor Patrimonial. Indica se a ação está barata em relação ao patrimônio físico.
             * **DY (Dividend Yield):** Rendimento em dividendos pagos nos últimos 12 meses.
             * **ROE:** Eficiência da empresa em gerar lucro com o capital dos acionistas.
-            * **EV/EBITDA:** Valor da empresa dividido pelo lucro operacional. Ajuda a ver o preço real do negócio.
+            * **Margem Líquida:** Porcentagem de lucro real sobre a receita total.
+            * **EV/EBITDA:** Valor da empresa dividido pelo lucro operacional. Ajuda a ver o preço real do negócio incluindo dívidas.
             * **Dívida Líquida / EBITDA:** Mede o endividamento. Indica quantos anos de lucro operacional seriam necessários para pagar a dívida total.
-            * **RSI (IFR - Índice de Força Relativa):** Mede se uma ação está sendo "comprada demais" ou "vendida demais". 
-                * *Acima de 70 (Sobrecomprada):* A ação subiu muito rápido e pode cair (está cara).
-                * *Abaixo de 30 (Sobrevendida):* A ação caiu muito rápido e pode subir (está barata).
+            * **RSI (IFR):** Mede se uma ação está "comprada demais" (acima de 70 = cara) ou "vendida demais" (abaixo de 30 = barata).
             """)
     except Exception:
         st.warning("Erro ao carregar indicadores.")
 
-# --- FUNÇÃO DE IA E SENTIMENTO ---
+# --- FUNÇÃO DE IA E SENTIMENTO COM LINKS ---
 def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
     st.subheader(f"🕵️‍♂️ Inteligência de Mercado: {ticker}")
     noticias_detalhes = []
     texto_total_analise = ""
-    
     user_config = Config()
     user_config.browser_user_agent = get_random_header()
     
     try:
         url_news = f"https://news.google.com/rss/search?q={ticker}+when:2d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
         feed = feedparser.parse(url_news)
-        
         if feed.entries:
             for entry in feed.entries[:6]: 
                 titulo = entry.title.split(' - ')[0]
                 link = entry.link
                 noticias_detalhes.append({"titulo": titulo, "link": link})
-                
                 try:
-                    time.sleep(random.uniform(0.5, 1.2))
+                    time.sleep(random.uniform(0.3, 0.8))
                     article = Article(link, config=user_config)
                     article.download()
                     article.parse()
                     texto_total_analise += f"{titulo}. {article.text[:300]} "
                 except:
                     texto_total_analise += f"{titulo}. "
-        else:
-            st.info("Buscando fatos relevantes...")
     except Exception:
-        st.error("Erro no radar de notícias.")
+        pass
 
     positivas = ["alta", "dividendo", "lucro", "compra", "crescimento", "subiu", "positivo", "recorde"]
     negativas = ["queda", "risco", "prejuízo", "venda", "caiu", "dívida", "crise", "negativo"]
-    
     texto_limpo = texto_total_analise.lower()
     otimismo = sum(texto_limpo.count(p) for p in positivas)
     pessimismo = sum(texto_limpo.count(n) for n in negativas)
@@ -136,7 +139,6 @@ def analise_minuciosa_ia(ticker, preco, media, rsi_atual):
         for n in noticias_detalhes:
             st.markdown(f"• {n['titulo']} [[Link]({n['link']})]")
 
-# --- BUSCA DE DADOS ---
 def buscar_dados(ticker):
     try:
         t = yf.Ticker(ticker)
@@ -148,22 +150,42 @@ def buscar_dados(ticker):
     except Exception:
         return None, None
 
-# --- LOOP PRINCIPAL ---
-tickers = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBAS3.SA']
+# --- LOOP PRINCIPAL COM LÓGICA DE FILTRO ---
+tickers = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBAS3.SA', 'SANB11.SA', 'ABEV3.SA']
+encontrou_alguma = False
 
 for ticker in tickers:
     dados, info = buscar_dados(ticker)
     if dados is not None:
-        st.divider()
-        st.header(f"🏢 {info.get('longName', ticker)}")
-        
-        preco_atual = float(dados['Close'].iloc[-1])
-        media_val = dados['MA200'].iloc[-1]
-        media_atual = float(media_val) if not np.isnan(media_val) else preco_atual
-        rsi_atual = float(dados['RSI'].iloc[-1]) if not np.isnan(dados['RSI'].iloc[-1]) else 50
-        
-        st.line_chart(dados[['Close', 'MA200']])
-        analise_fundamentalista_i10(ticker, info)
-        analise_minuciosa_ia(ticker, preco_atual, media_atual, rsi_atual)
+        # Extração de valores para o filtro
+        pl = info.get('trailingPE', 0) or 0
+        pvp = info.get('priceToBook', 0) or 0
+        dy = (info.get('dividendYield', 0) or 0) * 100
+        roe = (info.get('returnOnEquity', 0) or 0) * 100
+        margem = (info.get('profitMargins', 0) or 0) * 100
+        ev_ebitda = info.get('enterpriseToEbitda', 0) or 0
+        divida_liquida = info.get('totalDebt', 0) - info.get('totalCash', 0)
+        ebitda_valor = info.get('ebitda', 1) # evita divisão por zero
+        div_ebitda = divida_liquida / ebitda_valor
 
-st.caption("Engenharia de IA 2026 - Analisador B3 Pro com Links e Legendas Completas.")
+        # LÓGICA DO FILTRO: Verifica se a ação atende a TODOS os critérios da barra lateral
+        if (pl <= f_pl and pvp <= f_pvp and dy >= f_dy and roe >= f_roe and 
+            margem >= f_margem and ev_ebitda <= f_ev_ebitda and div_ebitda <= f_div_ebitda):
+            
+            encontrou_alguma = True
+            st.divider()
+            st.header(f"🏢 {info.get('longName', ticker)}")
+            
+            preco_atual = float(dados['Close'].iloc[-1])
+            media_val = dados['MA200'].iloc[-1]
+            media_atual = float(media_val) if not np.isnan(media_val) else preco_atual
+            rsi_atual = float(dados['RSI'].iloc[-1]) if not np.isnan(dados['RSI'].iloc[-1]) else 50
+            
+            st.line_chart(dados[['Close', 'MA200']])
+            analise_fundamentalista_i10(ticker, info)
+            analise_minuciosa_ia(ticker, preco_atual, media_atual, rsi_atual)
+
+if not encontrou_alguma:
+    st.info("💡 Nenhuma ação da lista atende aos filtros selecionados no momento. Tente flexibilizar os critérios na barra lateral.")
+
+st.caption("Engenharia de IA 2026 - Sistema de Triagem Fundamentalista Pro.")
