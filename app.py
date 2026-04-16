@@ -39,7 +39,6 @@ def calcular_rsi(data, window=14):
 
 @st.cache_data(ttl=300)
 def obter_indices():
-    """Busca a pontuação dos principais índices globais"""
     indices = {'Ibovespa': '^BVSP', 'Nasdaq': '^IXIC', 'Dow Jones': '^DJI'}
     resultados = {}
     for nome, ticker in indices.items():
@@ -88,10 +87,10 @@ def obter_dados_ticker(ticker, mercado):
 # --- BARRA LATERAL (SIDEBAR) ---
 st.sidebar.title("🌎 Mercado e Estratégia")
 
-# Nova Seção: Índices Globais
+# Índices Mundiais
 st.sidebar.subheader("📈 Índices Mundiais")
-indices = obter_indices()
-for nome, (valor, var) in indices.items():
+indices_data = obter_indices()
+for nome, (valor, var) in indices_data.items():
     st.sidebar.metric(nome, f"{valor:,.0f} pts", f"{var:.2f}%")
 st.sidebar.divider()
 
@@ -117,9 +116,14 @@ if st.sidebar.button("Resetar Filtros"):
     st.session_state.filtros_ativos = False
     st.rerun()
 
-# --- TICKERS ---
+# --- TICKERS EXPANDIDOS ---
 if mercado_selecionado == "Brasil":
-    lista_base = ['PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'ABEV3', 'EGIE3', 'WEGE3', 'TRPL4']
+    # Lista ampliada com as principais da B3
+    lista_base = [
+        'PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'ABEV3', 'EGIE3', 'WEGE3', 
+        'TRPL4', 'SANB11', 'SAPR11', 'CPLE6', 'B3SA3', 'RENT3', 'VBBR3', 'RADL3',
+        'RAIZ4', 'GOAU4', 'CMIG4', 'JBSS3', 'SUZB3', 'TAEE11', 'KLBN11'
+    ]
     moeda_simbolo = "R$"
 else:
     lista_base = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'NFLX', 'KO', 'DIS']
@@ -151,6 +155,7 @@ for tkr in tickers_para_processar:
             if not (pl <= f_pl and pvp <= f_pvp and dy >= f_dy and div_e <= f_div_ebitda):
                 continue
 
+        # IA de Sentimento e Links
         noticias_texto = ""
         lista_links = []
         try:
@@ -207,7 +212,6 @@ if dados_vencedoras:
 
         st.line_chart(acao['Hist']['Close'])
 
-        # Cards de Métricas
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Preço Atual", f"{moeda_simbolo} {acao['Preço']:.2f}")
         c2.metric("P/L", round(acao['P/L'], 2))
@@ -215,7 +219,7 @@ if dados_vencedoras:
         c4.metric("Dív.Líq/EBITDA", round(acao['Dívida'], 2))
         c5.metric("Preço Justo (Graham)", f"{moeda_simbolo} {acao['Graham']:.2f}", f"{acao['Upside %']:.1f}%")
 
-        # Notícias
+        # Seção de Notícias Clicáveis
         with st.expander(f"📊 Detalhes Técnicos e 📌 Notícias: {acao['Ticker']}"):
             st.write(f"📈 RSI (Força Relativa): {acao['RSI']:.2f}")
             st.markdown("---")
