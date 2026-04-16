@@ -52,7 +52,7 @@ def obter_dados_ticker(ticker, mercado):
 
 @st.cache_data(ttl=300)
 def obter_cambio():
-    """Busca cotações das moedas em tempo real com correção para Bitcoin"""
+    """Busca cotações das moedas em tempo real"""
     moedas = {'Dólar': 'USDBRL=X', 'Euro': 'EURBRL=X', 'Bitcoin': 'BTC-BRL'}
     resultados = {}
     for nome, ticker in moedas.items():
@@ -98,7 +98,7 @@ if st.sidebar.button("Resetar Filtros"):
 
 # --- CONFIGURAÇÃO DE TICKERS ---
 if mercado_selecionado == "Brasil":
-    lista_base = ['PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'ABEV3', 'SANB11', 'EGIE3', 'WEGE3', 'TRPL4', 'SAPR11']
+    lista_base = ['PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'ABEV3', 'SANB11', 'EGIE3', 'WEGE3', 'TRPL4']
     moeda_simbolo = "R$"
 else:
     lista_base = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'NFLX', 'KO', 'DIS']
@@ -130,7 +130,7 @@ for tkr in tickers_para_processar:
             if not (pl <= f_pl and pvp <= f_pvp and dy >= f_dy and div_e <= f_div_ebitda):
                 continue
 
-        # Sentimento IA
+        # Inteligência de Sentimento
         noticias_texto = ""
         try:
             url = f"https://news.google.com/rss/search?q={tkr}&hl={'pt-BR' if mercado_selecionado == 'Brasil' else 'en-US'}"
@@ -142,7 +142,46 @@ for tkr in tickers_para_processar:
         score_n = sum(noticias_texto.count(w) for w in ["queda", "prejuízo", "venda", "caiu", "risk", "loss", "sell"])
         rsi_val = calcular_rsi(hist['Close'])
 
+        # Veredito Final da IA
         if score_p > score_n and rsi_val < 70:
             veredito, cor = "COMPRA ✅", "success"
         elif score_n > score_p or rsi_val > 75:
-            veredito, cor = "CAUTELA ⚠️", "
+            veredito, cor = "CAUTELA ⚠️", "error"
+        else:
+            veredito, cor = "NEUTRO ⚖️", "warning"
+
+        dados_vencedoras.append({
+            "Ticker": tkr, "Empresa": info.get('shortName', tkr), "Preço": p_atual,
+            "P/L": pl, "DY %": dy, "Dívida": div_e, "Graham": p_justo, "Upside %": upside,
+            "Veredito": veredito, "Cor": cor, "RSI": rsi_val, "Hist": hist
+        })
+
+# --- INTERFACE DE RESULTADOS ---
+if dados_vencedoras:
+    st.subheader("🏆 Ranking de Oportunidades")
+    df_resumo = pd.DataFrame(dados_vencedoras)[["Ticker", "Preço", "DY %", "Graham", "Upside %", "Veredito"]]
+    st.dataframe(df_resumo.sort_values(by="Upside %", ascending=False), use_container_width=True, hide_index=True)
+
+    for acao in dados_vencedoras:
+        st.divider()
+        col_tit, col_ver = st.columns([3, 1])
+        col_tit.header(f"🏢 {acao['Empresa']} ({acao['Ticker']})")
+        
+        if acao["Cor"] == "success": col_ver.success(f"**{acao['Veredito']}**")
+        elif acao["Cor"] == "error": col_ver.error(f"**{acao['Veredito']}**")
+        else: col_ver.warning(f"**{acao['Veredito']}**")
+
+        st.line_chart(acao['Hist']['Close'])
+
+        # Cards de Métricas
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Preço Atual", f"{moeda_simbolo} {acao['Preço']:.2f}")
+        c2.metric("P/L", round(acao['P/L'], 2))
+        c3.metric("DY", f"{acao['DY %']:.2f}%")
+        c4.metric("Dív.Líq/EBITDA", round(acao['Dívida'], 2))
+        c5.metric("Preço Justo (Graham)", f"{moeda_simbolo} {acao['Graham']:.2f}", f"{acao['Upside %']:.1f}%")
+
+        with st.expander("📊 Análise Técnica e Notícias"):
+            st.write(f"📈 RSI (Força Relativa): {acao['RSI']:.2f}")
+else:
+    st.info("💡 Use a barra lateral para buscar uma ação ou ajustar os filtros.")
