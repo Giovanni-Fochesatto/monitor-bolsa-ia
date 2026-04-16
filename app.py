@@ -37,34 +37,39 @@ def calcular_rsi(data, window=14):
     rsi = 100 - (100 / (1 + rs))
     return float(rsi.iloc[-1])
 
-# [NOVA FUNÇÃO] Simulação de Assertividade (Backtest)
+# [ATUALIZADO] Simulação de Assertividade de Compra e Venda
 def simular_performance_historica(hist):
-    """Analisa sinais de RSI baixo nos últimos 12 meses e calcula a taxa de acerto"""
-    if len(hist) < 40: return 0, 0
+    """Analisa sinais de RSI baixo (compra) e alto (venda) nos últimos 12 meses"""
+    if len(hist) < 40: return 0, 0, 0
     
     precos = hist['Close']
-    acertos = 0
-    total_sinais = 0
+    acertos_c, total_c = 0, 0
+    acertos_v, total_v = 0, 0
     retornos = []
     
-    # Simula compra quando RSI < 35 e verifica após 15 dias
     for i in range(20, len(precos) - 15):
-        # Calcula RSI daquele momento específico
         window = precos.iloc[i-14:i]
         rsi_passado = calcular_rsi(window)
+        preco_entrada = precos.iloc[i]
+        preco_saida = precos.iloc[i + 15]
+        retorno = (preco_saida / preco_entrada) - 1
         
+        # Sinal de Compra (RSI < 35)
         if rsi_passado < 35:
-            total_sinais += 1
-            preco_entrada = precos.iloc[i]
-            preco_saida = precos.iloc[i + 15]
-            retorno = (preco_saida / preco_entrada) - 1
+            total_c += 1
             retornos.append(retorno)
-            if retorno > 0:
-                acertos += 1
+            if retorno > 0: acertos_c += 1
                 
-    taxa_acerto = (acertos / total_sinais * 100) if total_sinais > 0 else 0
+        # Sinal de Venda (RSI > 70)
+        elif rsi_passado > 70:
+            total_v += 1
+            if retorno < 0: acertos_v += 1 # Acerto se o preço caiu após sinal de venda
+    
+    taxa_compra = (acertos_c / total_c * 100) if total_c > 0 else 0
+    taxa_venda = (acertos_v / total_v * 100) if total_v > 0 else 0
     retorno_medio = (np.mean(retornos) * 100) if retornos else 0
-    return taxa_acerto, retorno_medio
+    
+    return taxa_compra, taxa_venda, retorno_medio
 
 @st.cache_data(ttl=300)
 def obter_indices():
@@ -143,7 +148,7 @@ if st.sidebar.button("Resetar Filtros"):
     st.session_state.filtros_ativos = False
     st.rerun()
 
-# --- LISTA DE TICKERS EXPANDIDA ---
+# --- LISTA DE TICKERS EXPANDIDA (MANTIDA INTEGRALMENTE) ---
 if mercado_selecionado == "Brasil":
     lista_base = [
         'PETR4', 'VALE3', 'ITUB4', 'BBAS3', 'BBDC4', 'SANB11', 'B3SA3',
@@ -204,34 +209,39 @@ for tkr in tickers_para_processar:
         score_n = sum(noticias_texto.count(w) for w in ["queda", "prejuízo", "venda", "caiu", "risk", "loss", "sell"])
         rsi_val = calcular_rsi(hist['Close'])
 
-        # [NOVO] Cálculo de Assertividade Histórica
-        taxa_acerto, retorno_medio = simular_performance_historica(hist)
+        # [ATUALIZADO] Cálculo de Assertividades
+        taxa_compra, taxa_venda, retorno_medio = simular_performance_historica(hist)
 
-        # Lógica de Veredito com Motivo
-        motivo_cautela = ""
-        if score_p > score_n and rsi_val < 70:
+        # Lógica de Veredito Expandida (Inclusão de VENDA)
+        motivo_detalhe = ""
+        if rsi_val > 70 and score_n > score_p:
+            veredito, cor = "VENDA 🚨", "error"
+            motivo_detalhe = f"RSI alto ({rsi_val:.1f}) e notícias negativas. Possível topo."
+        elif rsi_val > 75:
+            veredito, cor = "VENDA 🚨", "error"
+            motivo_detalhe = f"RSI em nível extremo ({rsi_val:.1f}). Ativo sobrecomprado."
+        elif score_p > score_n and rsi_val < 65:
             veredito, cor = "COMPRA ✅", "success"
-        elif score_n > score_p or rsi_val > 75:
+        elif score_n > score_p or rsi_val > 70:
             veredito, cor = "CAUTELA ⚠️", "error"
             lista_motivos = []
-            if rsi_val > 75: lista_motivos.append(f"RSI alto ({rsi_val:.1f}): Ação pode estar sobrecomprada.")
-            if score_n > score_p: lista_motivos.append("Sentimento das notícias está negativo.")
-            motivo_cautela = " | ".join(lista_motivos)
+            if rsi_val > 70: lista_motivos.append(f"RSI alto ({rsi_val:.1f})")
+            if score_n > score_p: lista_motivos.append("Sentimento negativo")
+            motivo_detalhe = " | ".join(lista_motivos)
         else:
             veredito, cor = "NEUTRO ⚖️", "warning"
 
         dados_vencedoras.append({
             "Ticker": tkr, "Empresa": info.get('shortName', tkr), "Preço": p_atual,
             "P/L": pl, "DY %": dy, "Dívida": div_e, "Graham": p_justo, "Upside %": upside,
-            "Veredito": veredito, "Cor": cor, "Motivo": motivo_cautela, "RSI": rsi_val, "Hist": hist, "Links": lista_links,
-            "TaxaAcerto": taxa_acerto, "RetornoMedio": retorno_medio
+            "Veredito": veredito, "Cor": cor, "Motivo": motivo_detalhe, "RSI": rsi_val, "Hist": hist, "Links": lista_links,
+            "TaxaCompra": taxa_compra, "TaxaVenda": taxa_venda, "RetornoMedio": retorno_medio
         })
 
 # --- INTERFACE ---
 if dados_vencedoras:
     st.subheader("🏆 Ranking de Oportunidades & Assertividade")
-    # Adicionado Taxa de Acerto e Retorno Médio ao DataFrame resumo
-    df_resumo = pd.DataFrame(dados_vencedoras)[["Ticker", "Preço", "DY %", "Upside %", "Veredito", "TaxaAcerto", "RetornoMedio"]]
+    df_resumo = pd.DataFrame(dados_vencedoras)[["Ticker", "Preço", "DY %", "Upside %", "Veredito", "TaxaCompra", "TaxaVenda"]]
     
     st.dataframe(
         df_resumo.sort_values(by="Upside %", ascending=False), 
@@ -239,23 +249,24 @@ if dados_vencedoras:
         hide_index=True,
         column_config={
             "Veredito": st.column_config.TextColumn("Veredito", help="Baseado em RSI + Notícias"),
-            "TaxaAcerto": st.column_config.NumberColumn("Assertividade (%)", format="%.1f%%", help="Taxa de acerto histórica do algoritmo nesta ação (1 ano)."),
-            "RetornoMedio": st.column_config.NumberColumn("Retorno Médio Sinais", format="%.2f%%")
+            "TaxaCompra": st.column_config.NumberColumn("Assert. Compra (%)", format="%.1f%%"),
+            "TaxaVenda": st.column_config.NumberColumn("Assert. Venda (%)", format="%.1f%%")
         }
     )
 
     for acao in dados_vencedoras:
         st.divider()
-        col_tit, col_ver, col_acc = st.columns([3, 1, 1])
+        col_tit, col_ver, col_acc_c, col_acc_v = st.columns([3, 1, 1, 1])
         col_tit.header(f"🏢 {acao['Empresa']} ({acao['Ticker']})")
         
-        # Exibição de Assertividade em destaque
-        col_acc.metric("Assertividade Histórica", f"{acao['TaxaAcerto']:.1f}%", f"{acao['RetornoMedio']:.2f}% (Méd.)")
+        # Exibição das Assertividades em destaque
+        col_acc_c.metric("Assertividade Compra", f"{acao['TaxaCompra']:.1f}%")
+        col_acc_v.metric("Assertividade Venda", f"{acao['TaxaVenda']:.1f}%")
         
         if acao["Cor"] == "success": 
             col_ver.success(f"**{acao['Veredito']}**")
         elif acao["Cor"] == "error": 
-            col_ver.error(f"**{acao['Veredito']}**", icon="⚠️")
+            col_ver.error(f"**{acao['Veredito']}**", icon="🚨" if "VENDA" in acao['Veredito'] else "⚠️")
             if acao["Motivo"]: st.info(f"👉 **Atenção:** {acao['Motivo']}")
         else: 
             col_ver.warning(f"**{acao['Veredito']}**")
@@ -273,7 +284,7 @@ if dados_vencedoras:
 
         with st.expander(f"📊 Detalhes Técnicos e 📌 Notícias: {acao['Ticker']}"):
             st.write(f"📈 RSI (Força Relativa): {acao['RSI']:.2f}")
-            st.write(f"🎯 O algoritmo acertou {acao['TaxaAcerto']:.1f}% dos sinais de compra nesta ação nos últimos 12 meses.")
+            st.write(f"🎯 Assertividade Histórica: Compra {acao['TaxaCompra']:.1f}% | Venda {acao['TaxaVenda']:.1f}%")
             st.markdown("---")
             st.markdown("**Últimas Manchetes:**")
             for n in acao['Links']: st.markdown(f"• [{n['titulo']}]({n['link']})")
