@@ -114,11 +114,13 @@ def obter_indices():
 
 @st.cache_data(ttl=300)
 def obter_cambio():
-    moedas = {'Dólar': 'USDBRL=X', 'Euro': 'EURBRL=X', 'Bitcoin': 'BTC-BRL'}
+    # Adicionado Libra (GBPBRL=X)
+    moedas = {'Dólar': 'USDBRL=X', 'Euro': 'EURBRL=X', 'Libra': 'GBPBRL=X', 'Bitcoin': 'BTC-BRL'}
     resultados = {}
     for nome, ticker in moedas.items():
         try:
             data = yf.Ticker(ticker)
+            # Para cripto, 2d às vezes falha; tentamos 1d se necessário
             dado = data.history(period='2d')
             if not dado.empty and len(dado) >= 2:
                 atual = dado['Close'].iloc[-1]
@@ -126,7 +128,10 @@ def obter_cambio():
                 variacao = ((atual / anterior) - 1) * 100
                 resultados[nome] = (atual, variacao)
             else:
-                resultados[nome] = (data.fast_info.last_price, 0.0)
+                # Fallback para preço atual se histórico falhar
+                hist_fallback = data.history(period='1d')
+                atual = hist_fallback['Close'].iloc[-1] if not hist_fallback.empty else 0.0
+                resultados[nome] = (atual, 0.0)
         except:
             resultados[nome] = (0.0, 0.0)
     return resultados
@@ -157,7 +162,11 @@ cambio = obter_cambio()
 col_c1, col_c2 = st.sidebar.columns(2)
 col_c1.metric("Dólar", f"R$ {cambio['Dólar'][0]:.2f}", f"{cambio['Dólar'][1]:.2f}%")
 col_c2.metric("Euro", f"R$ {cambio['Euro'][0]:.2f}", f"{cambio['Euro'][1]:.2f}%")
-st.sidebar.metric("Bitcoin", f"R$ {cambio['Bitcoin'][0]:.0f}", f"{cambio['Bitcoin'][1]:.2f}%")
+
+# Nova linha para Libra e Bitcoin
+col_c3, col_c4 = st.sidebar.columns(2)
+col_c3.metric("Libra", f"R$ {cambio['Libra'][0]:.2f}", f"{cambio['Libra'][1]:.2f}%")
+col_c4.metric("Bitcoin", f"R$ {cambio['Bitcoin'][0]:.0f}", f"{cambio['Bitcoin'][1]:.2f}%")
 st.sidebar.divider()
 
 mercado_selecionado = st.sidebar.radio("Escolha o Mercado:", ["Brasil", "EUA"], on_change=ativar_filtros)
