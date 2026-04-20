@@ -79,7 +79,40 @@ def simular_performance_historica(hist):
         }
 
     df = hist.copy()
+    
+def modelo_ensemble_score(hist, rsi, macd, sinal_macd, score_p, score_n):
+    df = hist.copy()
 
+    features = []
+
+    # RSI
+    features.append((50 - abs(rsi - 50)) / 50)
+
+    # MACD
+    macd_signal = 1 if macd.iloc[-1] > sinal_macd.iloc[-1] else -1
+    features.append(macd_signal)
+
+    # Tendência
+    sma = df["Close"].rolling(50).mean().iloc[-1]
+    trend = 1 if df["Close"].iloc[-1] > sma else -1
+    features.append(trend)
+
+    # Sentimento
+    sentiment = score_p - score_n
+    features.append(np.tanh(sentiment / 5))
+
+    # Volatilidade
+    vol = df["Close"].pct_change().std()
+    features.append(1 - min(vol * 10, 1))
+
+    # ===================== SCORE FINAL =====================
+    weights = np.array([0.25, 0.20, 0.20, 0.20, 0.15])
+    score = np.dot(features, weights)
+
+    # Normaliza para 0–100
+    score_final = int((score + 1) * 50)
+
+    return max(0, min(100, score_final))
     # ===================== SINAIS =====================
     df["retorno"] = df["Close"].pct_change()
 
@@ -159,6 +192,7 @@ def obter_macro():
 
 # ===================== PROCESSAMENTO CENTRAL (adaptado para BTC) =====================
 def processar_bitcoin():
+    score_ia = modelo_ensemble_score(hist, rsi_val, macd, sinal_macd, score_p, score_n)
     info, hist = obter_dados_bitcoin()
     if hist.empty:
         return None
@@ -192,21 +226,16 @@ def processar_bitcoin():
     p_atual = float(close.iloc[-1]) if not close.empty else 0
 
     # Lógica de veredito adaptada para BTC
-    if rsi_val > 75 and score_n > score_p:
-        veredito, cor = "VENDA FORTE 🚨", "error"
-        motivo_detalhe = f"Sobrecompra extrema (RSI {rsi_val:.1f}) + sentimento negativo."
-    elif rsi_val > 70:
-        veredito, cor = "VENDA 🚨", "error"
-        motivo_detalhe = f"RSI elevado ({rsi_val:.1f}) - possível correção."
-    elif (close.iloc[-1] > sma200.iloc[-1] if not sma200.empty else True) and macd.iloc[-1] > sinal_macd.iloc[-1] and score_p > score_n + 3 and rsi_val < 60:
-        veredito, cor = "COMPRA FORTE ✅", "success"
-        motivo_detalhe = f"Trend de alta + sentimento positivo forte + RSI saudável."
-    elif (close.iloc[-1] > sma200.iloc[-1] if not sma200.empty else True) and score_p > score_n and rsi_val < 65:
-        veredito, cor = "COMPRA ✅", "success"
-        motivo_detalhe = f"Momentum técnico favorável e notícias positivas."
-    else:
-        veredito, cor = "CAUTELA ⚠️", "warning"
-        motivo_detalhe = "Sem sinal claro. Aguardar confirmação de tendência."
+   if score_ia > 75:
+    veredito, cor = "COMPRA FORTE 🟢", "success"
+elif score_ia > 60:
+    veredito, cor = "COMPRA 🟢", "success"
+elif score_ia < 25:
+    veredito, cor = "VENDA FORTE 🔴", "error"
+elif score_ia < 40:
+    veredito, cor = "VENDA 🔴", "error"
+else:
+    veredito, cor = "NEUTRO ⚖️", "warning"
 
     return {
         "Ticker": "BTC-USD",
@@ -223,6 +252,7 @@ def processar_bitcoin():
         "SortinoCompra": sim["sortino_compra"],
         "MaxDrawdown": sim["max_drawdown"],
         "QtdCompra": sim["qtd_compra"]
+        "ScoreIA": score_ia,
     }
 
 # ===================== SIDEBAR =====================
