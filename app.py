@@ -192,51 +192,71 @@ def obter_macro():
 
 # ===================== PROCESSAMENTO CENTRAL (adaptado para BTC) =====================
 def processar_bitcoin():
-    score_ia = modelo_ensemble_score(hist, rsi_val, macd, sinal_macd, score_p, score_n)
     info, hist = obter_dados_bitcoin()
     if hist.empty:
         return None
 
     hist = hist.copy()
     close = hist["Close"]
+
     rsi_val = calcular_rsi(close)
+
     sma200 = close.rolling(window=200).mean()
+
     exp12 = close.ewm(span=12, adjust=False).mean()
     exp26 = close.ewm(span=26, adjust=False).mean()
     macd = exp12 - exp26
     sinal_macd = macd.ewm(span=9, adjust=False).mean()
 
-    # Notícias
+    # ===================== NOTÍCIAS =====================
     noticias_texto = ""
     lista_links = []
+
     try:
         feed = feedparser.parse("https://news.google.com/rss/search?q=bitcoin&hl=pt-BR")
         for entry in feed.entries[:6]:
             titulo = entry.title.lower()
             noticias_texto += titulo + " "
-            lista_links.append({"titulo": entry.title, "link": entry.link})
+            lista_links.append({
+                "titulo": entry.title,
+                "link": entry.link
+            })
     except:
         pass
 
     score_p = sum(noticias_texto.count(w) for w in ["alta", "bull", "compra", "subiu", "rally", "high", "buy", "halving"])
     score_n = sum(noticias_texto.count(w) for w in ["queda", "bear", "venda", "caiu", "crash", "low", "sell", "dump"])
 
+    # ===================== BACKTEST =====================
     sim = simular_performance_historica(hist)
 
     p_atual = float(close.iloc[-1]) if not close.empty else 0
 
-    # Lógica de veredito adaptada para BTC
-   if score_ia > 75:
-    veredito, cor = "COMPRA FORTE 🟢", "success"
-elif score_ia > 60:
-    veredito, cor = "COMPRA 🟢", "success"
-elif score_ia < 25:
-    veredito, cor = "VENDA FORTE 🔴", "error"
-elif score_ia < 40:
-    veredito, cor = "VENDA 🔴", "error"
-else:
-    veredito, cor = "NEUTRO ⚖️", "warning"
+    # ===================== IA ENSEMBLE =====================
+    score_ia = modelo_ensemble_score(hist, rsi_val, macd, sinal_macd, score_p, score_n)
 
+    # ===================== VEREDITO INTELIGENTE =====================
+    if score_ia > 75:
+        veredito, cor = "COMPRA FORTE 🟢", "success"
+        motivo_detalhe = f"Score IA elevado ({score_ia}/100) com confluência técnica e sentimento positivo."
+
+    elif score_ia > 60:
+        veredito, cor = "COMPRA 🟢", "success"
+        motivo_detalhe = f"Score IA favorável ({score_ia}/100), tendência consistente."
+
+    elif score_ia < 25:
+        veredito, cor = "VENDA FORTE 🔴", "error"
+        motivo_detalhe = f"Score IA muito baixo ({score_ia}/100), pressão vendedora dominante."
+
+    elif score_ia < 40:
+        veredito, cor = "VENDA 🔴", "error"
+        motivo_detalhe = f"Score IA fraco ({score_ia}/100), risco de queda."
+
+    else:
+        veredito, cor = "NEUTRO ⚖️", "warning"
+        motivo_detalhe = f"Score IA neutro ({score_ia}/100), mercado indefinido."
+
+    # ===================== RETORNO =====================
     return {
         "Ticker": "BTC-USD",
         "Preço": p_atual,
@@ -246,13 +266,14 @@ else:
         "RSI": rsi_val,
         "Hist": hist,
         "Links": lista_links,
+        "ScoreIA": score_ia,
+
         "TaxaCompra": sim["taxa_compra"],
         "ExpectancyCompra": sim["expectancy_compra"],
         "SharpeCompra": sim["sharpe_compra"],
         "SortinoCompra": sim["sortino_compra"],
         "MaxDrawdown": sim["max_drawdown"],
         "QtdCompra": sim["qtd_compra"]
-        "ScoreIA": score_ia,
     }
 
 # ===================== SIDEBAR =====================
