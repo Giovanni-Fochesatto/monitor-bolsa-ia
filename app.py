@@ -67,81 +67,57 @@ def calcular_rsi(data, window: int = 14):
         return 50.0
     return float(calcular_rsi_series(data, window).iloc[-1])
 
-def simular_performance_historica(hist, min_volume=50000):
-    if len(hist) < 300:
-        return {"taxa_compra": 0.0, "taxa_venda": 0.0, "retorno_medio_compra": 0.0, "retorno_medio_venda": 0.0,
-                "expectancy_compra": 0.0, "expectancy_venda": 0.0, "sharpe_compra": 0.0, "sortino_compra": 0.0,
-                "max_drawdown": 0.0, "qtd_compra": 0, "qtd_venda": 0}
-    
-    close = hist["Close"].copy()
-    volume = hist.get("Volume", pd.Series(0, index=close.index))
-    rsi = calcular_rsi_series(close)
-    sma200 = close.rolling(window=200).mean()
-    exp12 = close.ewm(span=12, adjust=False).mean()
-    exp26 = close.ewm(span=26, adjust=False).mean()
-    macd = exp12 - exp26
-    sinal_macd = macd.ewm(span=9, adjust=False).mean()
-    retorno_15d = close.shift(-15) / close - 1
-    liquid_mask = volume > min_volume
+def simular_performance_historica(hist):
+    if hist is None or len(hist) < 50:
+        return {
+            "expectancy_compra": 0,
+            "sharpe_compra": 0,
+            "taxa_compra": 0
+        }
 
-    buy_mask = ((rsi < 35) & (close > sma200) & (macd > sinal_macd) & retorno_15d.notna() & liquid_mask)
-    sell_mask = ((rsi > 70) & ((close < sma200) | (macd < sinal_macd)) & retorno_15d.notna() & liquid_mask)
+    df = hist.copy()
 
-    # Cálculo de métricas de compra (mantido o resto da função original)
-    if buy_mask.any():
-        ret_buy = retorno_15d[buy_mask]
-        qtd_c = int(buy_mask.sum())
-        taxa_c = (ret_buy > 0).mean() * 100
-        ret_med_c = ret_buy.mean() * 100
-        wins = ret_buy[ret_buy > 0]
-        losses = ret_buy[ret_buy < 0]
-        avg_win = wins.mean() if not wins.empty else 0
-        avg_loss = abs(losses.mean()) if not losses.empty else 0
-        expectancy_c = (taxa_c/100 * avg_win) - ((1 - taxa_c/100) * avg_loss) * 100
-        returns = ret_buy.dropna()
-        sharpe_c = returns.mean() / returns.std() * np.sqrt(252) if len(returns) > 5 and returns.std() != 0 else 0
-        downside = returns[returns < 0]
-        sortino_c = returns.mean() / downside.std() * np.sqrt(252) if len(downside) > 5 and downside.std() != 0 else 0
-    else:
-        taxa_c = ret_med_c = expectancy_c = sharpe_c = sortino_c = 0.0
-        qtd_c = 0
+    # ===================== SINAIS =====================
+    df["retorno"] = df["Close"].pct_change()
 
-    # Cálculo de venda (mantido)
-    if sell_mask.any():
-        ret_sell = retorno_15d[sell_mask]
-        qtd_v = int(sell_mask.sum())
-        taxa_v = (ret_sell < 0).mean() * 100
-        ret_med_v = ret_sell.mean() * 100
-        # ... (lógica de sell mantida igual)
-        wins_v = ret_sell[ret_sell < 0]
-        losses_v = ret_sell[ret_sell > 0]
-        avg_win_v = abs(wins_v.mean()) if not wins_v.empty else 0
-        avg_loss_v = losses_v.mean() if not losses_v.empty else 0
-        expectancy_v = (taxa_v/100 * avg_win_v) - ((1 - taxa_v/100) * avg_loss_v) * 100
-        returns_v = ret_sell.dropna()
-        sharpe_v = returns_v.mean() / returns_v.std() * np.sqrt(252) if len(returns_v) > 5 and returns_v.std() != 0 else 0
-        downside_v = returns_v[returns_v > 0]  # downside para sell é quando sobe (perda)
-        sortino_v = returns_v.mean() / downside_v.std() * np.sqrt(252) if len(downside_v) > 5 and downside_v.std() != 0 else 0
-    else:
-        taxa_v = ret_med_v = expectancy_v = sharpe_v = sortino_v = 0.0
-        qtd_v = 0
+    # Estratégia simples (base que você pode evoluir)
+    df["sinal"] = 0
+    df.loc[df["Close"] > df["Close"].rolling(20).mean(), "sinal"] = 1  # compra em tendência
 
-    # Max Drawdown
-    if len(close) > 10:
-        cum_ret = close.pct_change().cumsum()
-        peak = cum_ret.cummax()
-        drawdown = (cum_ret - peak) / peak
-        max_dd = drawdown.min() * 100
-    else:
-        max_dd = 0.0
+    # ===================== RESULTADO DAS OPERAÇÕES =====================
+    df["retorno_estrategia"] = df["sinal"].shift(1) * df["retorno"]
+
+    trades = df[df["sinal"].diff() == 1]  # entradas
+
+    ganhos = df[df["retorno_estrategia"] > 0]["retorno_estrategia"]
+    perdas = df[df["retorno_estrategia"] < 0]["retorno_estrategia"]
+
+    # ===================== MÉTRICAS =====================
+    total_trades = len(trades)
+
+    if total_trades == 0:
+        return {
+            "expectancy_compra": 0,
+            "sharpe_compra": 0,
+            "taxa_compra": 0
+        }
+
+    winrate = len(ganhos) / (len(ganhos) + len(perdas)) if (len(ganhos) + len(perdas)) > 0 else 0
+
+    media_gain = ganhos.mean() if len(ganhos) > 0 else 0
+    media_loss = perdas.mean() if len(perdas) > 0 else 0
+
+    # Expectancy (modelo profissional)
+    expectancy = (winrate * media_gain) + ((1 - winrate) * media_loss)
+
+    # Sharpe Ratio (anualizado)
+    std = df["retorno_estrategia"].std()
+    sharpe = (df["retorno_estrategia"].mean() / std) * np.sqrt(252) if std != 0 else 0
 
     return {
-        "taxa_compra": taxa_c, "taxa_venda": taxa_v,
-        "retorno_medio_compra": ret_med_c, "retorno_medio_venda": ret_med_v,
-        "expectancy_compra": expectancy_c, "expectancy_venda": expectancy_v,
-        "sharpe_compra": sharpe_c, "sortino_compra": sortino_c,
-        "max_drawdown": max_dd,
-        "qtd_compra": qtd_c, "qtd_venda": qtd_v
+        "expectancy_compra": float(expectancy),
+        "sharpe_compra": float(sharpe),
+        "taxa_compra": float(winrate)
     }
 
 # ===================== CACHE =====================
