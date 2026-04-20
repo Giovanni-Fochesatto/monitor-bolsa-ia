@@ -68,71 +68,62 @@ def calcular_rsi(data, window: int = 14):
     return float(calcular_rsi_series(data, window).iloc[-1])
 
 def simular_performance_historica(hist):
-    if hist is None or len(hist) < 50:
+    try:
+        if hist is None or len(hist) < 50:
+            raise ValueError("Histórico insuficiente")
+
+        df = hist.copy()
+
+        df["retorno"] = df["Close"].pct_change()
+
+        df["sinal"] = 0
+        df.loc[df["Close"] > df["Close"].rolling(20).mean(), "sinal"] = 1
+
+        df["retorno_estrategia"] = df["sinal"].shift(1) * df["retorno"]
+
+        trades = df[df["sinal"].diff() == 1]
+
+        ganhos = df[df["retorno_estrategia"] > 0]["retorno_estrategia"]
+        perdas = df[df["retorno_estrategia"] < 0]["retorno_estrategia"]
+
+        total_trades = len(trades)
+
+        winrate = len(ganhos) / (len(ganhos) + len(perdas)) if (len(ganhos) + len(perdas)) > 0 else 0
+
+        media_gain = ganhos.mean() if len(ganhos) > 0 else 0
+        media_loss = perdas.mean() if len(perdas) > 0 else 0
+
+        expectancy = (winrate * media_gain) + ((1 - winrate) * media_loss)
+
+        std = df["retorno_estrategia"].std()
+        sharpe = (df["retorno_estrategia"].mean() / std) * np.sqrt(252) if std != 0 else 0
+
+        # Sortino
+        downside = df[df["retorno_estrategia"] < 0]["retorno_estrategia"]
+        downside_std = downside.std()
+        sortino = (df["retorno_estrategia"].mean() / downside_std) * np.sqrt(252) if downside_std != 0 else 0
+
+        # Drawdown
+        df["equity"] = (1 + df["retorno_estrategia"].fillna(0)).cumprod()
+        df["peak"] = df["equity"].cummax()
+        df["drawdown"] = (df["equity"] - df["peak"]) / df["peak"]
+        max_dd = df["drawdown"].min()
+
         return {
-            "expectancy_compra": 0,
-            "sharpe_compra": 0,
-            "taxa_compra": 0,
-            "sortino_compra": 0,
-            "max_drawdown": 0,
-            "qtd_compra": 0
+            "taxa_compra": float(winrate * 100),
+            "expectancy_compra": float(expectancy * 100),
+            "sharpe_compra": float(sharpe),
+            "sortino_compra": float(sortino),
+            "max_drawdown": float(max_dd * 100),
+            "qtd_compra": int(total_trades)
         }
 
-    df = hist.copy()
-    
-def modelo_ensemble_score(hist, rsi, macd, sinal_macd, score_p, score_n):
-    df = hist.copy()
-
-    features = []
-
-    # RSI
-    features.append((50 - abs(rsi - 50)) / 50)
-
-    # MACD
-    macd_signal = 1 if macd.iloc[-1] > sinal_macd.iloc[-1] else -1
-    features.append(macd_signal)
-
-    # Tendência
-    sma = df["Close"].rolling(50).mean().iloc[-1]
-    trend = 1 if df["Close"].iloc[-1] > sma else -1
-    features.append(trend)
-
-    # Sentimento
-    sentiment = score_p - score_n
-    features.append(np.tanh(sentiment / 5))
-
-    # Volatilidade
-    vol = df["Close"].pct_change().std()
-    features.append(1 - min(vol * 10, 1))
-
-    # ===================== SCORE FINAL =====================
-    weights = np.array([0.25, 0.20, 0.20, 0.20, 0.15])
-    score = np.dot(features, weights)
-
-    # Normaliza para 0–100
-    score_final = int((score + 1) * 50)
-
-    return max(0, min(100, score_final))
-    # ===================== SINAIS =====================
-    df["retorno"] = df["Close"].pct_change()
-
-    df["sinal"] = 0
-    df.loc[df["Close"] > df["Close"].rolling(20).mean(), "sinal"] = 1
-
-    df["retorno_estrategia"] = df["sinal"].shift(1) * df["retorno"]
-
-    trades = df[df["sinal"].diff() == 1]
-
-    ganhos = df[df["retorno_estrategia"] > 0]["retorno_estrategia"]
-    perdas = df[df["retorno_estrategia"] < 0]["retorno_estrategia"]
-
-    total_trades = len(trades)
-
-    if total_trades == 0:
+    except Exception as e:
+        # 🔒 fallback institucional (NUNCA quebra app)
         return {
+            "taxa_compra": 0,
             "expectancy_compra": 0,
             "sharpe_compra": 0,
-            "taxa_compra": 0,
             "sortino_compra": 0,
             "max_drawdown": 0,
             "qtd_compra": 0
@@ -228,7 +219,7 @@ def processar_bitcoin():
     score_n = sum(noticias_texto.count(w) for w in ["queda", "bear", "venda", "caiu", "crash", "low", "sell", "dump"])
 
     # ===================== BACKTEST =====================
-    sim = simular_performance_historica(hist)
+    sim = simular_performance_historica(hist) or {}
 
     p_atual = float(close.iloc[-1]) if not close.empty else 0
 
@@ -268,12 +259,12 @@ def processar_bitcoin():
         "Links": lista_links,
         "ScoreIA": score_ia,
 
-        "TaxaCompra": sim["taxa_compra"],
-        "ExpectancyCompra": sim["expectancy_compra"],
-        "SharpeCompra": sim["sharpe_compra"],
-        "SortinoCompra": sim["sortino_compra"],
-        "MaxDrawdown": sim["max_drawdown"],
-        "QtdCompra": sim["qtd_compra"]
+        "TaxaCompra": sim.get("taxa_compra", 0),
+        "ExpectancyCompra": sim.get("expectancy_compra", 0),
+        "SharpeCompra": sim.get("sharpe_compra", 0),
+        "SortinoCompra": sim.get("sortino_compra", 0),
+        "MaxDrawdown": sim.get("max_drawdown", 0),
+        "QtdCompra": sim.get("qtd_compra", 0),
     }
 
 # ===================== SIDEBAR =====================
