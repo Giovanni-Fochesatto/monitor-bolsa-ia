@@ -72,7 +72,10 @@ def simular_performance_historica(hist):
         return {
             "expectancy_compra": 0,
             "sharpe_compra": 0,
-            "taxa_compra": 0
+            "taxa_compra": 0,
+            "sortino_compra": 0,
+            "max_drawdown": 0,
+            "qtd_compra": 0
         }
 
     df = hist.copy()
@@ -80,44 +83,60 @@ def simular_performance_historica(hist):
     # ===================== SINAIS =====================
     df["retorno"] = df["Close"].pct_change()
 
-    # Estratégia simples (base que você pode evoluir)
     df["sinal"] = 0
-    df.loc[df["Close"] > df["Close"].rolling(20).mean(), "sinal"] = 1  # compra em tendência
+    df.loc[df["Close"] > df["Close"].rolling(20).mean(), "sinal"] = 1
 
-    # ===================== RESULTADO DAS OPERAÇÕES =====================
     df["retorno_estrategia"] = df["sinal"].shift(1) * df["retorno"]
 
-    trades = df[df["sinal"].diff() == 1]  # entradas
+    trades = df[df["sinal"].diff() == 1]
 
     ganhos = df[df["retorno_estrategia"] > 0]["retorno_estrategia"]
     perdas = df[df["retorno_estrategia"] < 0]["retorno_estrategia"]
 
-    # ===================== MÉTRICAS =====================
     total_trades = len(trades)
 
     if total_trades == 0:
         return {
             "expectancy_compra": 0,
             "sharpe_compra": 0,
-            "taxa_compra": 0
+            "taxa_compra": 0,
+            "sortino_compra": 0,
+            "max_drawdown": 0,
+            "qtd_compra": 0
         }
+
+    # ===================== MÉTRICAS =====================
 
     winrate = len(ganhos) / (len(ganhos) + len(perdas)) if (len(ganhos) + len(perdas)) > 0 else 0
 
     media_gain = ganhos.mean() if len(ganhos) > 0 else 0
     media_loss = perdas.mean() if len(perdas) > 0 else 0
 
-    # Expectancy (modelo profissional)
     expectancy = (winrate * media_gain) + ((1 - winrate) * media_loss)
 
-    # Sharpe Ratio (anualizado)
     std = df["retorno_estrategia"].std()
     sharpe = (df["retorno_estrategia"].mean() / std) * np.sqrt(252) if std != 0 else 0
 
+    # ===================== SORTINO =====================
+    downside = df[df["retorno_estrategia"] < 0]["retorno_estrategia"]
+    downside_std = downside.std()
+
+    sortino = (df["retorno_estrategia"].mean() / downside_std) * np.sqrt(252) if downside_std != 0 else 0
+
+    # ===================== MAX DRAWDOWN =====================
+    df["equity"] = (1 + df["retorno_estrategia"].fillna(0)).cumprod()
+    df["peak"] = df["equity"].cummax()
+    df["drawdown"] = (df["equity"] - df["peak"]) / df["peak"]
+
+    max_dd = df["drawdown"].min()
+
     return {
-        "expectancy_compra": float(expectancy),
+        "expectancy_compra": float(expectancy * 100),
         "sharpe_compra": float(sharpe),
-        "taxa_compra": float(winrate)
+        "taxa_compra": float(winrate * 100),
+        "sortino_compra": float(sortino),
+        "max_drawdown": float(max_dd * 100),
+        "qtd_compra": int(total_trades)
     }
 
 # ===================== CACHE =====================
