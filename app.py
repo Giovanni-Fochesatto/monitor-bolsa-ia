@@ -181,8 +181,6 @@ def obter_macro():
     macro["Bitcoin_USD"] = yf.Ticker("BTC-USD").fast_info.last_price
     return macro
 
-st.cache_data.clear()
-
 # ===================== PROCESSAMENTO CENTRAL (adaptado para BTC) =====================
 def processar_bitcoin():
     info, hist = obter_dados_bitcoin()
