@@ -79,40 +79,7 @@ def simular_performance_historica(hist):
         }
 
     df = hist.copy()
-    
-def modelo_ensemble_score(hist, rsi, macd, sinal_macd, score_p, score_n):
-    df = hist.copy()
 
-    features = []
-
-    # RSI
-    features.append((50 - abs(rsi - 50)) / 50)
-
-    # MACD
-    macd_signal = 1 if macd.iloc[-1] > sinal_macd.iloc[-1] else -1
-    features.append(macd_signal)
-
-    # Tendência
-    sma = df["Close"].rolling(50).mean().iloc[-1]
-    trend = 1 if df["Close"].iloc[-1] > sma else -1
-    features.append(trend)
-
-    # Sentimento
-    sentiment = score_p - score_n
-    features.append(np.tanh(sentiment / 5))
-
-    # Volatilidade
-    vol = df["Close"].pct_change().std()
-    features.append(1 - min(vol * 10, 1))
-
-    # ===================== SCORE FINAL =====================
-    weights = np.array([0.25, 0.20, 0.20, 0.20, 0.15])
-    score = np.dot(features, weights)
-
-    # Normaliza para 0–100
-    score_final = int((score + 1) * 50)
-
-    return max(0, min(100, score_final))
     # ===================== SINAIS =====================
     df["retorno"] = df["Close"].pct_change()
 
